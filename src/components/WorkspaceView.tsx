@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { ChevronRight, Share2, Play, Plus, BrainCircuit, Wand2, Video, Languages, MessageSquare, ZoomIn, ZoomOut, MousePointer2, Send, Users, Paperclip, CopyPlus } from 'lucide-react';
-import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection } from '@xyflow/react';
-import { ScriptNode, CharacterNode, ImagesNode } from './CanvasNodes';
+import { ChevronRight, Share2, Play, Plus, BrainCircuit, Wand2, Video, Languages, MessageSquare, ZoomIn, ZoomOut, MousePointer2, Send, Users, Paperclip, CopyPlus, Settings2, Scissors, Music, Layers, LayoutPanelLeft, RefreshCw } from 'lucide-react';
+import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap } from '@xyflow/react';
+import { ScriptNode, CharacterNode, ImagesNode, AudioNode } from './CanvasNodes';
 
 const nodeTypes = {
   script: ScriptNode,
   character: CharacterNode,
   images: ImagesNode,
+  audio: AudioNode,
 };
 
 const initialNodes: Node[] = [
@@ -26,7 +27,13 @@ const initialNodes: Node[] = [
   {
     id: 'img-1',
     type: 'images',
-    position: { x: 950, y: 200 },
+    position: { x: 950, y: 100 },
+    data: {},
+  },
+  {
+    id: 'audio-1',
+    type: 'audio',
+    position: { x: 950, y: 550 },
     data: {},
   }
 ];
@@ -44,6 +51,14 @@ const initialEdges: Edge[] = [
     id: 'e-char-img',
     source: 'char-1',
     target: 'img-1',
+    type: 'default',
+    animated: true,
+    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' }
+  },
+  {
+    id: 'e-script-audio',
+    source: 'script-1',
+    target: 'audio-1',
     type: 'default',
     animated: true,
     style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' }
@@ -68,7 +83,7 @@ export default function WorkspaceView() {
       type: 'default',
       animated: true,
       style: { stroke: '#10B981', strokeWidth: 2, strokeDasharray: '4 4' }
-    }, eds)),
+    } as any, eds)),
     [setEdges],
   );
 
@@ -180,15 +195,34 @@ export default function WorkspaceView() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-hide" ref={scrollRef}>
-          {/* Status Card 1 */}
-          <div className="bg-[#1A1A1C] border border-white/5 p-4 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-xs text-slate-400">
-                <div className="w-4 h-4 rounded-full border border-slate-500 flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                </div>
-                <span>Update Storyboard</span>
+          {/* Task Queue Card */}
+          <div className="bg-[#1A1A1C] border border-brand/20 p-4 rounded-2xl space-y-3 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <div className="flex items-center space-x-2">
+                <BrainCircuit size={14} className="text-brand animate-pulse" />
+                <span className="text-xs font-bold text-slate-300">后台运行中 (2)</span>
               </div>
+              <span className="text-[10px] text-slate-500">Queue</span>
+            </div>
+            <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                   <div className="flex items-center space-x-2 text-slate-400">
+                      <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+                      <span>正在生成分镜 6 视频...</span>
+                   </div>
+                   <span className="text-slate-500 font-mono">45%</span>
+                </div>
+                <div className="w-full h-1 bg-[#0B0B0C] rounded-full overflow-hidden">
+                   <div className="h-full bg-brand w-[45%] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                </div>
+                
+                <div className="flex items-center justify-between text-[11px] pt-1">
+                   <div className="flex items-center space-x-2 text-slate-500">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                      <span>等待生成: 场景配乐 A1</span>
+                   </div>
+                   <span className="text-slate-600 font-mono">0%</span>
+                </div>
             </div>
           </div>
 
@@ -322,28 +356,100 @@ export default function WorkspaceView() {
           </div>
       </div>
 
-          {/* Central Canvas Workspace */}
-          <div className="flex-1 relative bg-[#0B0B0C] overflow-hidden">
-            <ReactFlowProvider>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                nodeTypes={nodeTypes}
-                minZoom={0.1}
-                maxZoom={2}
-                defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-                fitView
-              >
-                <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#555" />
-                <Controls showInteractive={false} className="hidden" />
-              </ReactFlow>
-            </ReactFlowProvider>
+      {/* Central Canvas Workspace */}
+      <div className="flex-1 flex bg-[#0B0B0C] relative overflow-hidden">
+         {/* Center Area container */}
+         <div className="flex-1 flex flex-col z-0 relative">
+              <div className="flex-1 relative bg-[#0B0B0C]">
+                <ReactFlowProvider>
+                  {/* Left Canvas Nav */}
+                  <div className="absolute left-8 top-8 z-20 flex flex-col space-y-8">
+                     {['总览', '图片/视频', '剧本', '角色', '分镜', '视频'].map((item) => (
+                        <div key={item} 
+                             className="flex items-center space-x-4 cursor-pointer group">
+                           <div className={`w-1.5 h-1.5 rounded-full ${item === '角色' ? 'bg-brand shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-slate-600 group-hover:bg-slate-400'} transition-all`} />
+                           <span className={`text-[15px] tracking-wide ${item === '角色' ? 'text-white font-medium' : 'text-slate-400 group-hover:text-slate-300'} transition-colors`}>{item}</span>
+                        </div>
+                     ))}
+                  </div>
 
-            {/* Floater Controls (Bottom Right) */}
-            <div className="absolute bottom-6 right-6 flex items-center space-x-2 z-20">
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    nodeTypes={nodeTypes}
+                    minZoom={0.1}
+                    maxZoom={2}
+                    defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+                    fitView
+                  >
+                    <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#555" />
+                    <Controls showInteractive={false} className="hidden" />
+                    <MiniMap style={{ backgroundColor: '#1A1A1C', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} nodeColor="#333" maskColor="rgba(0,0,0,0.5)" />
+                  </ReactFlow>
+                </ReactFlowProvider>
+              </div>
+          </div>
+
+          {/* Right Properties Panel */}
+          <div className="w-[280px] border-l border-white/5 bg-[#121213] relative z-20 flex flex-col">
+             <div className="h-10 border-b border-white/5 flex items-center px-4 justify-between bg-[#1A1A1C]">
+                <span className="text-[12px] font-bold text-slate-300 flex items-center space-x-1"><Settings2 size={14}/><span>节点配置</span></span>
+             </div>
+             <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                 {/* Dummy properties */}
+                 <div>
+                    <h3 className="text-xs font-bold text-slate-400 mb-3">生成模型 Engine</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">Sora</button>
+                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">Kling</button>
+                    </div>
+                 </div>
+                 
+                 <div>
+                    <h3 className="text-xs font-bold text-slate-400 mb-3">画面比例 Aspect Ratio</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">16:9</button>
+                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">9:16</button>
+                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">1:1</button>
+                    </div>
+                 </div>
+
+                 <div>
+                    <h3 className="text-xs font-bold text-slate-400 mb-3">时长 Duration</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">4s</button>
+                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">8s</button>
+                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">10s</button>
+                    </div>
+                 </div>
+
+                 <div>
+                    <h3 className="text-xs font-bold text-slate-400 mb-2">运镜控制 Camera</h3>
+                    <div className="space-y-2">
+                       <select className="w-full bg-[#1A1A1C] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none">
+                          <option>自动 Auto</option>
+                          <option>推镜头 Zoom In</option>
+                          <option>拉镜头 Zoom Out</option>
+                          <option>横移 Pan</option>
+                       </select>
+                    </div>
+                 </div>
+                 
+                 <div>
+                    <h3 className="text-xs font-bold text-slate-400 mb-2">随机种子 Seed</h3>
+                    <div className="flex items-center space-x-2">
+                       <input type="text" className="flex-1 bg-[#1A1A1C] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" value="-1" readOnly />
+                       <button className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 rounded-lg transition-colors"><RefreshCw size={14} /></button>
+                    </div>
+                 </div>
+             </div>
+          </div>
+
+          {/* Floater Controls (Inside Canvas) */}
+          <div className="absolute bottom-6 right-[304px] flex items-center space-x-2 z-20">
                <div className="bg-[#1A1A1C] h-10 flex items-center px-1 rounded-xl shadow-xl border border-white/5">
                  <button className="p-2 text-slate-400 hover:text-white transition-colors"><MessageSquare size={16} /></button>
                  <button className="p-2 text-slate-400 hover:text-white transition-colors"><MousePointer2 size={16} /></button>

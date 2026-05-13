@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
-import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon } from 'lucide-react';
+import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music } from 'lucide-react';
 
 export const ScriptNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
@@ -257,6 +257,45 @@ export const ImagesNode = ({ id, data }: any) => {
           </div>
         ))}
       </div>
+      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
+    </div>
+  );
+};
+
+export const AudioNode = ({ id, data }: any) => {
+  const { setNodes } = useReactFlow();
+
+  return (
+    <div className="w-[300px] bg-[#111112] p-4 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
+      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
+      
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded flex items-center justify-center bg-yellow-500/20 text-yellow-400">
+            <Music size={14} />
+          </div>
+          <span className="text-xs font-bold text-slate-200">生成音效配乐</span>
+        </div>
+        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-white/10 rounded text-slate-400 transition-colors">
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 space-y-3">
+         <p className="text-[11px] text-slate-400">Prompt: 悠远的电子合成器音效，带着空灵的宇宙回响，适合太空场景</p>
+         <div className="h-10 bg-slate-900 border border-white/5 rounded-lg flex items-center px-3 space-x-3 group/audio cursor-pointer hover:border-brand/50 transition-colors">
+            <button className="w-6 h-6 bg-brand rounded-full flex items-center justify-center">
+              <Play size={10} className="fill-white text-white ml-0.5" />
+            </button>
+            <div className="flex-1 flex items-center space-x-1">
+               {[1,2,3,4,5,6,7,5,3,4,6,8,9,6,4,3,2,1].map((h, i) => (
+                 <div key={i} className="w-1 bg-brand/60 rounded-full" style={{ height: `${h * 1.5}px` }} />
+               ))}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono">00:08</span>
+         </div>
+      </div>
+      
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
   );
