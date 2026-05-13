@@ -5,17 +5,20 @@ import com.wandou.ai.agent.dto.AgentRunResponse;
 import com.wandou.ai.agent.llm.LlmProvider;
 import com.wandou.ai.sse.SseEvent;
 import com.wandou.ai.sse.SseHub;
-import org.springframework.scheduling.annotation.Async;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 public class AgentRunService {
 
     private final LlmProvider llmProvider;
     private final SseHub sseHub;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(4);
 
     public AgentRunService(LlmProvider llmProvider, SseHub sseHub) {
         this.llmProvider = llmProvider;
@@ -26,12 +29,11 @@ public class AgentRunService {
         String runId = "run_" + UUID.randomUUID().toString().replace("-", "");
         String conversationId = valueOrNew(request.conversationId(), "conv_");
         String canvasId = valueOrNew(request.canvasId(), "canvas_");
-        executeAsync(runId, conversationId, canvasId, request);
+        executorService.submit(() -> execute(runId, conversationId, canvasId, request));
         return new AgentRunResponse(runId, conversationId, canvasId, "running", "/api/agent/runs/" + runId + "/events");
     }
 
-    @Async
-    public void executeAsync(String runId, String conversationId, String canvasId, AgentRunRequest request) {
+    public void execute(String runId, String conversationId, String canvasId, AgentRunRequest request) {
         sleep(300);
         sseHub.send(runId, SseEvent.of("run.started", runId, Map.of(
                 "runId", runId,
@@ -84,7 +86,7 @@ public class AgentRunService {
                 "canvasId", canvasId,
                 "node", Map.of(
                         "id", videoNodeId,
-                        "type", "video",
+                        "type", "images",
                         "title", "视频生成任务",
                         "status", "running",
                         "position", Map.of("x", 640, "y", 180)
@@ -126,6 +128,11 @@ public class AgentRunService {
                 "runId", runId,
                 "status", "success"
         )));
+    }
+
+    @PreDestroy
+    public void destroy() {
+        executorService.shutdownNow();
     }
 
     private String valueOrNew(String value, String prefix) {
