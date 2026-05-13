@@ -1,0 +1,56 @@
+import React from 'react';
+import { LayoutDashboard, PenTool, FolderClosed, Users, Settings, Trash2 } from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface SidebarProps {
+  currentView: string;
+  onViewChange: (view: string) => void;
+}
+
+export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
+  const items = [
+    { id: 'workspace', icon: PenTool, label: 'AI创作', badge: 'PRO' },
+    { id: 'assets', icon: FolderClosed, label: '素材管理' },
+    { id: 'users', icon: Users, label: '用户管理' },
+  ];
+
+  return (
+    <div className="w-16 h-full flex flex-col items-center justify-between py-6 bg-[#0B0B0C] z-20 shrink-0">
+      <div className="flex flex-col items-center space-y-6">
+        <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center mb-2 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          <span className="text-white font-black text-2xl tracking-tighter italic">W</span>
+        </div>
+        
+        {items.map((item) => (
+          <motion.div
+            key={item.id}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => onViewChange(item.id)}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer relative group transition-all duration-300 ${
+              currentView === item.id 
+                ? 'bg-[#1A1A1C] text-brand border border-white/5' 
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <item.icon size={20} strokeWidth={1.5} />
+            {item.badge && (
+              <div className="absolute -top-1 -right-2 px-1 h-3.5 bg-brand rounded-full border border-[#0B0B0C] flex items-center justify-center text-[8px] font-bold text-white shadow-sm">
+                {item.badge}
+              </div>
+            )}
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="flex flex-col items-center space-y-4">
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5"
+        >
+          <Settings size={18} strokeWidth={1.5} />
+        </motion.div>
+      </div>
+    </div>
+  );
+}

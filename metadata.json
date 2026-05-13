@@ -1,0 +1,8 @@
+{
+  "name": "OIIOII Space Clone",
+  "description": "A high-fidelity recreation of the OIIOII.ai agent team space interface, featuring a dark minimalist design and AI agent interactions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
