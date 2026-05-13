@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: wandou-ai-backend
+
+wandou:
+  ai:
+    provider:
+      type: mock
+    cors:
+      allowed-origins:
+        - http://localhost:5173
+        - http://localhost:3000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
