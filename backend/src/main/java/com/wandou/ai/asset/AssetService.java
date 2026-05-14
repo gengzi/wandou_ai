@@ -1,6 +1,7 @@
 package com.wandou.ai.asset;
 
 import com.wandou.ai.asset.dto.AssetResponse;
+import com.wandou.ai.asset.dto.AssetCreateRequest;
 import com.wandou.ai.common.IdGenerator;
 import org.springframework.stereotype.Service;
 
@@ -47,7 +48,23 @@ public class AssetService {
                 .toList();
     }
 
+    public AssetResponse create(AssetCreateRequest request) {
+        return create(
+                normalize(request.projectId()),
+                normalize(request.canvasId()),
+                normalize(request.nodeId()),
+                request.type(),
+                request.name(),
+                request.url(),
+                request.thumbnailUrl() == null || request.thumbnailUrl().isBlank() ? request.url() : request.thumbnailUrl()
+        );
+    }
+
     public Optional<AssetResponse> get(String assetId) {
         return Optional.ofNullable(assets.get(assetId));
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value;
     }
 }

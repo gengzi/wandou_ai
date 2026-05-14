@@ -1,14 +1,55 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar.tsx';
 import HomeView from './components/HomeView.tsx';
 import WorkspaceView from './components/WorkspaceView.tsx';
 import AssetsView from './components/AssetsView.tsx';
 import UsersView from './components/UsersView.tsx';
 import BackgroundStars from './components/BackgroundStars.tsx';
+import LoginView from './components/LoginView.tsx';
 import { AnimatePresence, motion } from 'motion/react';
+import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, UserResponse } from './lib/api.ts';
 
 export default function App() {
   const [view, setView] = useState<string>('home');
+  const [initialPrompt, setInitialPrompt] = useState('');
+  const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
+  const [checkingSession, setCheckingSession] = useState(Boolean(getAuthToken()));
+
+  useEffect(() => {
+    if (!getAuthToken()) {
+      return;
+    }
+
+    getCurrentUser()
+      .then(setCurrentUser)
+      .catch(() => clearAuthToken())
+      .finally(() => setCheckingSession(false));
+  }, []);
+
+  const openWorkspace = (prompt?: string) => {
+    if (prompt?.trim()) {
+      setInitialPrompt(prompt.trim());
+    } else {
+      setInitialPrompt('');
+    }
+    setView('workspace');
+  };
+
+  const handleAuthenticated = (session: LoginResponse) => {
+    setCurrentUser(session.user);
+  };
+
+  if (checkingSession) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-bg-dark text-sm text-slate-400">
+        正在恢复登录态...
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginView onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div className="flex h-screen w-full bg-bg-dark overflow-hidden selection:bg-brand/30 selection:text-white relative">
@@ -28,7 +69,7 @@ export default function App() {
               exit={{ opacity: 0, x: 20 }}
               className="w-full h-full"
             >
-              <HomeView onNavigate={() => setView('workspace')} />
+              <HomeView onNavigate={openWorkspace} />
             </motion.div>
           ) : view === 'assets' ? (
             <motion.div
@@ -58,7 +99,7 @@ export default function App() {
               exit={{ opacity: 0, scale: 1.02 }}
               className="w-full h-full"
             >
-              <WorkspaceView />
+              <WorkspaceView initialPrompt={initialPrompt} />
             </motion.div>
           )}
         </AnimatePresence>

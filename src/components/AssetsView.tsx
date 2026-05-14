@@ -1,15 +1,34 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Filter, FolderPlus, Upload, FileVideo, Image as ImageIcon, FileText, FileAudio, Folder, MoreVertical } from 'lucide-react';
+import { AssetResponse, createAsset, listAssets } from '../lib/api';
 
 export default function AssetsView() {
-  const assets = [
-    { id: 1, name: 'Project_Alpha_Assets', type: 'folder', items: 24, size: '1.2 GB', date: '2023-10-24' },
-    { id: 2, name: 'Character_Concepts', type: 'folder', items: 12, size: '450 MB', date: '2023-10-23' },
-    { id: 3, name: 'Scene_001_v2.mp4', type: 'video', size: '240 MB', date: '2023-10-25' },
-    { id: 4, name: 'Main_Character_Pose.png', type: 'image', size: '4.2 MB', date: '2023-10-25' },
-    { id: 5, name: 'Environment_Sketches.pdf', type: 'document', size: '12 MB', date: '2023-10-22' },
-    { id: 6, name: 'Background_Music_01.mp3', type: 'audio', size: '8 MB', date: '2023-10-20' },
-  ];
+  const [assets, setAssets] = useState<AssetResponse[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshAssets = () => {
+    listAssets()
+      .then(setAssets)
+      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '素材加载失败'));
+  };
+
+  useEffect(() => {
+    refreshAssets();
+  }, []);
+
+  const handleRegisterDemoAsset = async () => {
+    setError(null);
+    try {
+      const asset = await createAsset({
+        type: 'image',
+        name: `Reference_${Date.now()}.png`,
+        url: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=1200&auto=format&fit=crop',
+      });
+      setAssets((current) => [asset, ...current]);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '素材登记失败');
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -33,9 +52,9 @@ export default function AssetsView() {
             <FolderPlus size={16} />
             <span>新建文件夹</span>
           </button>
-          <button className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
+          <button onClick={handleRegisterDemoAsset} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
             <Upload size={16} />
-            <span>上传文件</span>
+            <span>登记素材</span>
           </button>
         </div>
       </header>
@@ -60,6 +79,11 @@ export default function AssetsView() {
       </div>
 
       <div className="flex-1 bg-[#121213] border border-white/5 rounded-2xl overflow-hidden">
+        {error && (
+          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        )}
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-white/5 text-xs text-slate-500">
@@ -76,11 +100,11 @@ export default function AssetsView() {
                   {getIcon(asset.type)}
                   <div>
                     <div className="text-sm font-medium text-slate-200 group-hover:text-brand transition-colors">{asset.name}</div>
-                    {asset.type === 'folder' && <div className="text-xs text-slate-500">{asset.items} 项</div>}
+                    <div className="text-xs text-slate-500">{asset.type}</div>
                   </div>
                 </td>
-                <td className="px-6 py-4 text-sm text-slate-400">{asset.size}</td>
-                <td className="px-6 py-4 text-sm text-slate-400">{asset.date}</td>
+                <td className="px-6 py-4 text-sm text-slate-400">--</td>
+                <td className="px-6 py-4 text-sm text-slate-400">{new Date(asset.createdAt).toLocaleString()}</td>
                 <td className="px-6 py-4 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button className="p-1 hover:bg-white/10 rounded text-slate-400">
                     <MoreVertical size={16} />

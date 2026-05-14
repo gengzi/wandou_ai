@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
-import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music } from 'lucide-react';
+import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music, Clapperboard, CheckCircle2 } from 'lucide-react';
 
 export const ScriptNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
@@ -10,7 +10,7 @@ export const ScriptNode = ({ id, data }: any) => {
   const style = data?.output?.style;
   
   return (
-    <div className="w-[400px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
+    <div className="w-[340px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center space-x-2">
           <div className="w-6 h-6 rounded flex items-center justify-center bg-purple-500/20 text-purple-400">
@@ -66,9 +66,10 @@ export const CharacterNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
   const title = data?.title || '角色一致性生成 (Character Design)';
   const status = data?.status || 'idle';
+  const characters = Array.isArray(data?.output?.characters) ? data.output.characters : [];
 
   return (
-    <div className="w-[900px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
+    <div className="w-[420px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
       <Handle type="target" position={Position.Top} className="w-2 h-2 bg-brand border-none" />
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center space-x-3">
@@ -88,14 +89,14 @@ export const CharacterNode = ({ id, data }: any) => {
           </button>
         </div>
       </div>
-      <div className="p-6 grid grid-cols-2 gap-8">
+      <div className="p-4 grid grid-cols-2 gap-4">
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
-                <h4 className="text-[13px] font-bold text-slate-200">角色1: 未来宇航少女</h4>
+                <h4 className="text-[13px] font-bold text-slate-200">角色1: {characters[0]?.name || '未来宇航少女'}</h4>
                 <button className="text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
             </div>
-            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: 外貌：一头柔顺的粉色长发，在失重环境中轻轻飘逸，身着设计精良、线条流畅的白色宇航服，其上点缀着未来科技感的蓝色光带...</p>
-            <div className="grid grid-cols-4 gap-3">
+            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {characters[0]?.prompt || '外貌：一头柔顺的粉色长发，在失重环境中轻轻飘逸，身着设计精良、线条流畅的白色宇航服，其上点缀着未来科技感的蓝色光带...'}</p>
+            <div className="grid grid-cols-2 gap-2">
               {[1,2,3,4].map(i => (
                 <div key={i} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${i===1?'border-brand shadow-[0_0_10px_rgba(16,185,129,0.2)]':'border-white/5'} overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all`}>
                   <img src={`https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80&auto=format&fit=crop&crop=face&seed=${i}`} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Pose" />
@@ -123,11 +124,11 @@ export const CharacterNode = ({ id, data }: any) => {
           </div>
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
-                <h4 className="text-[13px] font-bold text-slate-200">角色2: 机器小猫</h4>
+                <h4 className="text-[13px] font-bold text-slate-200">角色2: {characters[1]?.name || '机器小猫'}</h4>
                 <button className="text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
             </div>
-            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: 一只拥有金属外壳和蓝色电子眼的机器小猫，小巧可爱，但因为故障而显得非常害怕和脆弱。</p>
-            <div className="grid grid-cols-3 gap-3">
+            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {characters[1]?.prompt || '一只拥有金属外壳和蓝色电子眼的机器小猫，小巧可爱，但因为故障而显得非常害怕和脆弱。'}</p>
+            <div className="grid grid-cols-2 gap-2">
                 <div className="aspect-[4/3] rounded-xl bg-slate-900 border border-white/5 overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all">
                   <img src="https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=400&auto=format&fit=crop" className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Cat" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-end p-1.5 transition-opacity">
@@ -137,7 +138,7 @@ export const CharacterNode = ({ id, data }: any) => {
                       </button>
                   </div>
                 </div>
-                <div className="aspect-[4/3] col-span-2 rounded-xl bg-slate-900 border border-brand/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] overflow-hidden relative group/img cursor-pointer hover:border-brand transition-all">
+                <div className="aspect-[4/3] rounded-xl bg-slate-900 border border-brand/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] overflow-hidden relative group/img cursor-pointer hover:border-brand transition-all">
                   <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-brand text-white rounded text-[9px] font-bold z-10">SELECTED</span>
                   <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop" className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Bot" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-end p-2 transition-opacity">
@@ -154,6 +155,48 @@ export const CharacterNode = ({ id, data }: any) => {
                 </div>
             </div>
           </div>
+      </div>
+      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
+    </div>
+  );
+};
+
+export const StoryboardNode = ({ id, data }: any) => {
+  const { setNodes } = useReactFlow();
+  const title = data?.title || '分镜设计';
+  const status = data?.status || 'idle';
+  const scenes = Array.isArray(data?.output?.scenes) ? data.output.scenes : [];
+
+  return (
+    <div className="w-[360px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
+      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
+      <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded flex items-center justify-center bg-emerald-500/20 text-brand">
+            <Clapperboard size={14} />
+          </div>
+          <span className="text-xs font-bold text-slate-300">{title}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
+        </div>
+        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        {(scenes.length ? scenes : [
+          { shot: '01', duration: '2s', content: '等待 Agent 生成建立镜头。' },
+          { shot: '02', duration: '3s', content: '等待 Agent 生成角色动作。' },
+          { shot: '03', duration: '3s', content: '等待 Agent 生成结尾镜头。' },
+        ]).map((scene: any) => (
+          <div key={scene.shot} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-brand">Shot {scene.shot}</span>
+              <span className="text-[10px] text-slate-500">{scene.duration}</span>
+            </div>
+            <p className="text-[12px] leading-5 text-slate-300">{scene.content}</p>
+          </div>
+        ))}
+        {data?.output?.camera && <p className="text-[11px] text-slate-500">运镜：{data.output.camera}</p>}
       </div>
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
@@ -298,7 +341,7 @@ export const AudioNode = ({ id, data }: any) => {
       </div>
 
       <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 space-y-3">
-         <p className="text-[11px] text-slate-400">Prompt: 悠远的电子合成器音效，带着空灵的宇宙回响，适合太空场景</p>
+         <p className="text-[11px] text-slate-400">Prompt: {data?.output?.prompt || '悠远的电子合成器音效，带着空灵的宇宙回响，适合太空场景'}</p>
          <div className="h-10 bg-slate-900 border border-white/5 rounded-lg flex items-center px-3 space-x-3 group/audio cursor-pointer hover:border-brand/50 transition-colors">
             <button className="w-6 h-6 bg-brand rounded-full flex items-center justify-center">
               <Play size={10} className="fill-white text-white ml-0.5" />
@@ -313,6 +356,42 @@ export const AudioNode = ({ id, data }: any) => {
       </div>
       
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
+    </div>
+  );
+};
+
+export const FinalVideoNode = ({ id, data }: any) => {
+  const { setNodes } = useReactFlow();
+  const title = data?.title || '成片合成';
+  const status = data?.status || 'idle';
+  const thumbnail = data?.output?.thumbnailUrl || 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop';
+
+  return (
+    <div className="w-[340px] bg-[#111112] rounded-2xl border border-brand/30 shadow-[0_0_36px_rgba(16,185,129,0.12)] overflow-hidden group">
+      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
+      <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded flex items-center justify-center bg-brand/20 text-brand">
+            <CheckCircle2 size={14} />
+          </div>
+          <span className="text-xs font-bold text-slate-300">{title}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
+        </div>
+        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Trash2 size={12} />
+        </button>
+      </div>
+      <div className="p-3">
+        <div className="aspect-video overflow-hidden rounded-xl border border-white/5 bg-slate-900 relative">
+          <img src={thumbnail} className="h-full w-full object-cover" alt="Final video" />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <div className="w-12 h-12 rounded-full bg-brand/90 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+              <Play size={22} className="fill-white text-white ml-1" />
+            </div>
+          </div>
+        </div>
+        <p className="mt-3 text-[12px] leading-5 text-slate-300">{data?.output?.summary || '等待合成结果。'}</p>
+      </div>
     </div>
   );
 };

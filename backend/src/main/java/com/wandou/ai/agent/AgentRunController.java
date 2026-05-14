@@ -1,5 +1,6 @@
 package com.wandou.ai.agent;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.agent.dto.AgentRunRequest;
 import com.wandou.ai.agent.dto.AgentRunResponse;
 import com.wandou.ai.agent.dto.AgentRunDetailResponse;
@@ -28,11 +29,13 @@ public class AgentRunController {
     }
 
     @PostMapping
+    @SaCheckPermission("agent:run")
     public ApiResponse<AgentRunResponse> start(@Valid @RequestBody AgentRunRequest request) {
         return ApiResponse.ok(agentRunService.start(request));
     }
 
     @GetMapping("/{runId}")
+    @SaCheckPermission("agent:run")
     public ApiResponse<AgentRunDetailResponse> detail(@PathVariable String runId) {
         return agentRunService.get(runId)
                 .map(ApiResponse::ok)
@@ -40,6 +43,7 @@ public class AgentRunController {
     }
 
     @GetMapping(value = "/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @SaCheckPermission("agent:run")
     public SseEmitter events(@PathVariable String runId) {
         return sseHub.subscribe(runId);
     }

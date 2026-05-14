@@ -1,5 +1,6 @@
 package com.wandou.ai.task;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.common.ApiResponse;
 import com.wandou.ai.task.dto.TaskResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,11 +22,13 @@ public class TaskController {
     }
 
     @GetMapping
+    @SaCheckPermission("task:read")
     public ApiResponse<List<TaskResponse>> list(@RequestParam(required = false) String projectId) {
         return ApiResponse.ok(taskService.list(projectId));
     }
 
     @GetMapping("/{taskId}")
+    @SaCheckPermission("task:read")
     public ApiResponse<TaskResponse> detail(@PathVariable String taskId) {
         return taskService.get(taskId)
                 .map(ApiResponse::ok)

@@ -1,4 +1,5 @@
 const base = process.env.BACKEND_URL || 'http://localhost:8080';
+let token = '';
 
 async function readJson(response) {
   const text = await response.text();
@@ -10,7 +11,9 @@ async function readJson(response) {
 }
 
 async function get(path) {
-  const response = await fetch(`${base}${path}`);
+  const response = await fetch(`${base}${path}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  });
   if (!response.ok) {
     throw new Error(`GET ${path} failed with ${response.status}`);
   }
@@ -20,7 +23,10 @@ async function get(path) {
 async function post(path, body) {
   const response = await fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -29,8 +35,25 @@ async function post(path, body) {
   return readJson(response);
 }
 
+async function patch(path, body) {
+  const response = await fetch(`${base}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH ${path} failed with ${response.status}`);
+  }
+  return readJson(response);
+}
+
 async function waitForRun(runId) {
-  const response = await fetch(`${base}/api/agent/runs/${runId}/events`);
+  const url = new URL(`${base}/api/agent/runs/${runId}/events`);
+  url.searchParams.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(url);
   if (!response.ok || !response.body) {
     throw new Error(`SSE connection failed with ${response.status}`);
   }
@@ -68,6 +91,12 @@ async function waitForRun(runId) {
 }
 
 const health = await get('/actuator/health');
+const login = await post('/api/auth/login', {
+  email: process.env.SMOKE_EMAIL || 'admin@wandou.ai',
+  password: process.env.SMOKE_PASSWORD || 'Wandou@123456',
+});
+token = login.data.tokenValue;
+
 const project = await post('/api/projects', {
   name: 'Smoke Test',
   description: 'Automated backend smoke test',
@@ -85,6 +114,21 @@ const run = await post('/api/agent/runs', {
 const eventResult = await waitForRun(run.data.runId);
 const detail = await get(`/api/agent/runs/${run.data.runId}`);
 const canvas = await get(`/api/canvas/${project.data.canvasId}`);
+const movedNode = await patch(`/api/canvas/${project.data.canvasId}/nodes/script-1/position`, {
+  position: { x: 220, y: 180 },
+});
+const manualEdge = await post(`/api/canvas/${project.data.canvasId}/edges`, {
+  source: 'script-1',
+  target: 'img-1',
+});
+const manualAsset = await post('/api/assets', {
+  projectId: project.data.id,
+  canvasId: project.data.canvasId,
+  nodeId: 'img-1',
+  type: 'image',
+  name: 'Smoke Reference',
+  url: 'https://example.com/smoke-reference.png',
+});
 const conversation = await get(`/api/conversations/${project.data.conversationId}`);
 const tasks = await get(`/api/tasks?projectId=${project.data.id}`);
 const assets = await get(`/api/assets?projectId=${project.data.id}`);
@@ -102,6 +146,9 @@ const result = {
     progress: tasks.data[0].progress,
   },
   assets: assets.data.length,
+  movedNodeX: movedNode.data.position.x,
+  manualEdge: `${manualEdge.data.source}->${manualEdge.data.target}`,
+  manualAsset: manualAsset.data.name,
   hasVideoThumbnail: Boolean(videoNode?.output?.thumbnailUrl),
 };
 
@@ -116,6 +163,9 @@ if (
   result.task?.status !== 'success' ||
   result.task?.progress !== 100 ||
   result.assets < 1 ||
+  result.movedNodeX !== 220 ||
+  result.manualEdge !== 'script-1->img-1' ||
+  result.manualAsset !== 'Smoke Reference' ||
   !result.hasVideoThumbnail
 ) {
   throw new Error('Smoke test failed');

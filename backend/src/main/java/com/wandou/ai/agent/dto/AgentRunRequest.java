@@ -8,6 +8,8 @@ public record AgentRunRequest(
         String canvasId,
         @NotBlank(message = "message is required")
         String message,
-        String agentName
+        String agentName,
+        String mode,
+        String nodeId
 ) {
 }

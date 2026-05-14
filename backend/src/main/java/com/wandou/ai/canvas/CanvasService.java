@@ -27,7 +27,7 @@ public class CanvasService {
                 "script",
                 "智能剧本生成",
                 "idle",
-                new PositionResponse(100, 100),
+                new PositionResponse(80, 120),
                 Map.of("title", "智能剧本生成", "status", "idle"),
                 Map.of(),
                 Instant.now()
@@ -37,7 +37,7 @@ public class CanvasService {
                 "character",
                 "角色一致性生成",
                 "idle",
-                new PositionResponse(-50, 400),
+                new PositionResponse(480, 120),
                 Map.of("title", "角色一致性生成", "status", "idle"),
                 Map.of(),
                 Instant.now()
@@ -47,7 +47,7 @@ public class CanvasService {
                 "images",
                 "场景概念图生成",
                 "idle",
-                new PositionResponse(950, 100),
+                new PositionResponse(940, 120),
                 Map.of("title", "场景概念图生成", "status", "idle"),
                 Map.of(),
                 Instant.now()
@@ -57,7 +57,7 @@ public class CanvasService {
                 "audio",
                 "生成音效配乐",
                 "idle",
-                new PositionResponse(950, 550),
+                new PositionResponse(940, 500),
                 Map.of("title", "生成音效配乐", "status", "idle"),
                 Map.of(),
                 Instant.now()
@@ -123,6 +123,50 @@ public class CanvasService {
             }
         }
         throw new IllegalArgumentException("canvas node not found: " + nodeId);
+    }
+
+    public CanvasNodeResponse updateNodePosition(String canvasId, String nodeId, PositionResponse position) {
+        MutableCanvas canvas = requireCanvas(canvasId);
+        synchronized (canvas) {
+            for (int index = 0; index < canvas.nodes.size(); index++) {
+                CanvasNodeResponse node = canvas.nodes.get(index);
+                if (node.id().equals(nodeId)) {
+                    CanvasNodeResponse updated = new CanvasNodeResponse(
+                            node.id(),
+                            node.type(),
+                            node.title(),
+                            node.status(),
+                            position,
+                            node.data(),
+                            node.output(),
+                            Instant.now()
+                    );
+                    canvas.nodes.set(index, updated);
+                    canvas.updatedAt = Instant.now();
+                    return updated;
+                }
+            }
+        }
+        throw new IllegalArgumentException("canvas node not found: " + nodeId);
+    }
+
+    public CanvasEdgeResponse addEdge(String canvasId, String source, String target) {
+        MutableCanvas canvas = requireCanvas(canvasId);
+        synchronized (canvas) {
+            for (CanvasEdgeResponse edge : canvas.edges) {
+                if (edge.source().equals(source) && edge.target().equals(target)) {
+                    return edge;
+                }
+            }
+            CanvasEdgeResponse edge = new CanvasEdgeResponse(
+                    IdGenerator.id("edge_"),
+                    source,
+                    target
+            );
+            canvas.edges.add(edge);
+            canvas.updatedAt = Instant.now();
+            return edge;
+        }
     }
 
     private MutableCanvas requireCanvas(String canvasId) {

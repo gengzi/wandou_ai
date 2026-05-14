@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUp,
   BadgeHelp,
@@ -16,9 +16,10 @@ import {
   Wand2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { listProjects, ProjectResponse } from '../lib/api';
 
 interface HomeViewProps {
-  onNavigate: () => void;
+  onNavigate: (prompt?: string) => void;
 }
 
 const quickActions = [
@@ -28,7 +29,7 @@ const quickActions = [
   { label: '分镜生成', icon: Film },
 ];
 
-const recentProjects = [
+const fallbackRecentProjects = [
   {
     title: '宇宙少女与机器猫',
     time: '2026-05-14 19:21',
@@ -70,9 +71,28 @@ const highlights = [
 
 export default function HomeView({ onNavigate }: HomeViewProps) {
   const [prompt, setPrompt] = useState('');
+  const [projects, setProjects] = useState<ProjectResponse[]>([]);
+
+  useEffect(() => {
+    listProjects()
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
+
+  const recentProjects = useMemo(() => {
+    if (projects.length === 0) {
+      return fallbackRecentProjects;
+    }
+    return projects.slice(0, 4).map((project) => ({
+      title: project.name,
+      time: new Date(project.createdAt).toLocaleString(),
+      status: project.aspectRatio,
+      image: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop',
+    }));
+  }, [projects]);
 
   const submit = () => {
-    onNavigate();
+    onNavigate(prompt);
   };
 
   return (
@@ -84,7 +104,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
       </div>
 
       <header className="mx-auto flex max-w-[1480px] items-center justify-between px-10 py-6">
-        <button onClick={onNavigate} className="flex items-center gap-3">
+        <button onClick={() => onNavigate()} className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-lg font-black italic text-white shadow-[0_0_24px_rgba(16,185,129,0.35)]">W</div>
           <div className="text-left">
             <div className="text-lg font-black tracking-tight text-white">Wandou Studio</div>
@@ -129,6 +149,12 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
                 className="h-32 w-full resize-none bg-transparent px-1 text-lg leading-8 text-slate-100 outline-none placeholder:text-slate-600"
                 placeholder="输入你的短片想法，例如：少女抱着机器猫站在空间站窗前，窗外是星云，生成剧本、角色、分镜和视频任务..."
               />
@@ -161,7 +187,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               {quickActions.map((item) => (
                 <button
                   key={item.label}
-                  onClick={onNavigate}
+                  onClick={() => onNavigate(item.label)}
                   className={`flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-all ${
                     item.active
                       ? 'border-brand/30 bg-brand/20 text-white shadow-[0_0_30px_rgba(16,185,129,0.22)]'
@@ -183,7 +209,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               <h2 className="text-3xl font-black tracking-tight">最近项目</h2>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={onNavigate} className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+              <button onClick={() => onNavigate()} className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
                 + 新建项目
               </button>
               <button className="flex items-center gap-1 rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
@@ -198,7 +224,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               <motion.button
                 key={project.title}
                 whileHover={{ y: -4 }}
-                onClick={onNavigate}
+                onClick={() => onNavigate()}
                 className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
               >
                 <div className="relative h-36 overflow-hidden bg-white/5">
@@ -224,7 +250,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
           </div>
           <div className="grid grid-cols-2 gap-6">
             {highlights.map((item) => (
-              <button key={item.title} onClick={onNavigate} className="group relative h-72 overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-left">
+              <button key={item.title} onClick={() => onNavigate()} className="group relative h-72 overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-left">
                 <img src={item.image} alt={item.title} className="h-full w-full object-cover opacity-65 transition-transform duration-700 group-hover:scale-105" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
                 <div className="absolute bottom-0 p-7">
