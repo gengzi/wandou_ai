@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, PenTool, FolderClosed, Users, Settings, Trash2 } from 'lucide-react';
+import { FolderClosed, Home, PenTool, Settings, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface SidebarProps {
@@ -9,6 +9,7 @@ interface SidebarProps {
 
 export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const items = [
+    { id: 'home', icon: Home, label: '首页' },
     { id: 'workspace', icon: PenTool, label: 'AI创作', badge: 'PRO' },
     { id: 'assets', icon: FolderClosed, label: '素材管理' },
     { id: 'users', icon: Users, label: '用户管理' },

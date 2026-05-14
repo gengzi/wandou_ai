@@ -4,6 +4,31 @@ server:
 spring:
   application:
     name: wandou-ai-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wandou_ai}
+    username: ${SPRING_DATASOURCE_USERNAME:wandou}
+    password: ${SPRING_DATASOURCE_PASSWORD:wandou_dev}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 2592000
+  active-timeout: 604800
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-read-cookie: false
+  is-log: false
 
 wandou:
   ai:

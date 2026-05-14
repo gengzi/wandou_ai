@@ -1,160 +1,244 @@
-import React from 'react';
-import { Search, Sparkles, ChevronRight, Plus, Users, Wallet, HelpCircle, Gamepad2 } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  ArrowUp,
+  BadgeHelp,
+  Bot,
+  ChevronRight,
+  Clapperboard,
+  Film,
+  ImagePlus,
+  Layers3,
+  MessageSquareText,
+  Plus,
+  Sparkles,
+  Video,
+  WalletCards,
+  Wand2,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface HomeViewProps {
   onNavigate: () => void;
 }
 
+const quickActions = [
+  { label: '故事视频', icon: Clapperboard, active: true },
+  { label: '自由画布', icon: Layers3 },
+  { label: '角色设定', icon: Bot },
+  { label: '分镜生成', icon: Film },
+];
+
+const recentProjects = [
+  {
+    title: '宇宙少女与机器猫',
+    time: '2026-05-14 19:21',
+    status: '视频生成中',
+    image: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop',
+  },
+  {
+    title: '赛博茶馆短片',
+    time: '2026-05-13 22:48',
+    status: '分镜已完成',
+    image: 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=900&auto=format&fit=crop',
+  },
+  {
+    title: '品牌发布会概念片',
+    time: '2026-05-13 18:05',
+    status: '剧本修订',
+    image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=900&auto=format&fit=crop',
+  },
+  {
+    title: '古风角色一致性测试',
+    time: '2026-05-12 16:36',
+    status: '资产待审核',
+    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=900&auto=format&fit=crop',
+  },
+];
+
+const highlights = [
+  {
+    title: 'Agent Run 编排',
+    desc: '导演、剧本、分镜和视频任务会同步到会话、任务队列与画布节点。',
+    image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop',
+  },
+  {
+    title: '画布式资产流',
+    desc: '每一次生成都会沉淀为可追踪节点，素材、任务和会话保持同一个上下文。',
+    image: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=1200&auto=format&fit=crop',
+  },
+];
+
 export default function HomeView({ onNavigate }: HomeViewProps) {
+  const [prompt, setPrompt] = useState('');
+
+  const submit = () => {
+    onNavigate();
+  };
+
   return (
-    <div className="h-full flex flex-col overflow-y-auto scrollbar-hide pb-20">
-      {/* Top Banner Mockup */}
-      <div className="bg-gradient-to-r from-brand/20 via-brand/10 to-transparent p-2 text-center text-[10px] text-white flex items-center justify-center space-x-2">
-        <Sparkles size={12} className="text-brand" />
-        <span>Seedance2.0 最低至 $0.1 元/秒！充值优惠活动倒计时！</span>
-        <button className="bg-brand px-2 py-0.5 rounded-full text-[8px] font-bold">去看看</button>
+    <div className="h-full overflow-y-auto bg-[#08090A] text-slate-100 scrollbar-hide">
+      <div className="border-b border-brand/20 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_45%),linear-gradient(90deg,rgba(16,185,129,0.12),rgba(8,9,10,0.95))] px-8 py-3 text-center text-sm font-semibold text-slate-200">
+        <span className="text-brand">Wandou Agent Studio</span>
+        <span className="mx-2 text-slate-500">·</span>
+        <span>剧本、分镜、视频任务和资产流已接入同一工作台</span>
       </div>
 
-      {/* Header */}
-      <header className="px-10 py-6 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
-            <span className="text-white font-black text-lg">Oii</span>
+      <header className="mx-auto flex max-w-[1480px] items-center justify-between px-10 py-6">
+        <button onClick={onNavigate} className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-lg font-black italic text-white shadow-[0_0_24px_rgba(16,185,129,0.35)]">W</div>
+          <div className="text-left">
+            <div className="text-lg font-black tracking-tight text-white">Wandou Studio</div>
+            <div className="text-[11px] text-slate-500">AI video canvas</div>
           </div>
-          <span className="text-xl font-bold tracking-tight">OiiOii</span>
-        </div>
+        </button>
 
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center space-x-4 text-xs text-slate-400 font-medium">
-            <span className="hover:text-white cursor-pointer">简体中文</span>
-            <span className="hover:text-white cursor-pointer">常见问题</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 flex items-center space-x-2 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-white font-bold">300</span>
-              <span className="text-slate-500">FREE</span>
-            </div>
-            <div className="w-8 h-8 rounded-full border-2 border-brand/40 overflow-hidden">
-               <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=user" alt="Avatar" />
-            </div>
+        <div className="flex items-center gap-3">
+          <button className="rounded-xl bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/10">
+            简体中文
+          </button>
+          <button className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10">
+            <BadgeHelp size={16} />
+            常见问题
+          </button>
+          <button className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:bg-brand/90">
+            <MessageSquareText size={16} />
+            加入创作项目
+          </button>
+          <div className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-white">
+            <WalletCards size={16} className="text-brand" />
+            1,200
+            <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-500">FREE</span>
           </div>
         </div>
       </header>
 
-      {/* Main Hero Input */}
-      <section className="flex-1 flex flex-col items-center justify-center pt-20 px-6">
-        <div className="w-full max-w-3xl relative">
-          <div className="absolute -top-12 right-10">
-            <div className="relative">
-              <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center text-xl">🔥</div>
-              <div className="absolute -bottom-2 -left-4 bg-white text-black text-[8px] px-2 py-0.5 rounded-full font-bold shadow-lg">New!</div>
+      <main className="mx-auto max-w-[1480px] px-10 pb-20">
+        <section className="relative flex min-h-[390px] flex-col items-center justify-center pt-8">
+          <div className="pointer-events-none absolute inset-x-16 top-12 h-56 rounded-full bg-brand/10 blur-[90px]" />
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative w-full max-w-[860px]"
+          >
+            <div className="absolute -top-12 right-16 flex items-center gap-2 rounded-2xl border border-brand/20 bg-[#101312] px-4 py-2 shadow-[0_0_35px_rgba(16,185,129,0.2)]">
+              <Bot size={18} className="text-brand" />
+              <span className="text-xs font-semibold text-slate-300">导演 Agent 待命</span>
             </div>
-          </div>
 
-          <div className="glass rounded-[32px] p-8 shadow-2xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-brand/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-            <textarea
-              className="w-full bg-transparent border-none outline-none text-lg text-slate-200 placeholder-slate-600 resize-none h-32"
-              placeholder="拖拽/粘贴 🏞️ 图片到这里，来试试【角色】、【风格】参考"
-            ></textarea>
-            
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center space-x-2">
-                <button className="p-2 rounded-lg bg-white/5 text-slate-400 hover:text-white">
-                  <Plus size={20} />
-                </button>
-                <button className="px-4 py-1.5 rounded-full bg-white/5 text-slate-300 text-xs font-medium border border-white/5 flex items-center space-x-2">
-                   <Gamepad2 size={14} />
-                   <span>剧本</span>
+            <div className="rounded-[28px] border border-white/15 bg-[#0D0F0E]/95 p-5 shadow-[0_0_0_1px_rgba(16,185,129,0.08),0_30px_100px_rgba(0,0,0,0.45)]">
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                className="h-32 w-full resize-none bg-transparent px-1 text-lg leading-8 text-slate-100 outline-none placeholder:text-slate-600"
+                placeholder="输入你的短片想法，例如：少女抱着机器猫站在空间站窗前，窗外是星云，生成剧本、角色、分镜和视频任务..."
+              />
+
+              <div className="mt-5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/15">
+                    <Plus size={19} />
+                  </button>
+                  <button className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15">
+                    <ImagePlus size={16} />
+                    参考图
+                  </button>
+                  <button className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15">
+                    <Wand2 size={16} />
+                    剧本
+                  </button>
+                </div>
+                <button
+                  onClick={submit}
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_25px_rgba(16,185,129,0.38)] transition-transform hover:scale-105 active:scale-95"
+                  aria-label="开始创作"
+                >
+                  <ArrowUp size={22} />
                 </button>
               </div>
-              <button className="w-12 h-12 rounded-full bg-brand flex items-center justify-center text-white shadow-lg shadow-brand/40 hover:scale-105 active:scale-95 transition-all">
-                <Plus size={24} />
+            </div>
+
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              {quickActions.map((item) => (
+                <button
+                  key={item.label}
+                  onClick={onNavigate}
+                  className={`flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-all ${
+                    item.active
+                      ? 'border-brand/30 bg-brand/20 text-white shadow-[0_0_30px_rgba(16,185,129,0.22)]'
+                      : 'border-white/10 bg-white/5 text-slate-300 hover:border-brand/30 hover:bg-brand/10'
+                  }`}
+                >
+                  <item.icon size={15} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </section>
+
+        <section className="mt-14">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="text-brand" size={22} />
+              <h2 className="text-3xl font-black tracking-tight">最近项目</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={onNavigate} className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                + 新建项目
+              </button>
+              <button className="flex items-center gap-1 rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                查看全部
+                <ChevronRight size={15} />
               </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-3 mt-8">
-            {['Seedance 2.0故事动画', '自由画布', '剧情故事短片', '角色设计'].map((tag, i) => (
-              <button 
-                key={tag}
+          <div className="grid grid-cols-4 gap-5">
+            {recentProjects.map((project) => (
+              <motion.button
+                key={project.title}
+                whileHover={{ y: -4 }}
                 onClick={onNavigate}
-                className="px-4 py-2 rounded-full border border-white/5 bg-white/5 hover:bg-brand/10 hover:border-brand/40 text-xs text-slate-400 hover:text-brand transition-all flex items-center space-x-1"
+                className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
               >
-                <Sparkles size={12} />
-                <span>{tag}</span>
-                {i === 1 && <span className="text-[8px] bg-white/10 px-1 rounded ml-1">多模型</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Content Sections */}
-      <div className="px-10 mt-20 space-y-12">
-        {/* Recent Projects */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-2">
-              <Sparkles className="text-brand" size={18} />
-              <h2 className="text-xl font-bold">最近项目</h2>
-            </div>
-            <div className="flex space-x-4">
-              <button className="text-xs text-slate-400 px-3 py-1 bg-white/5 rounded-full">+ 新建项目</button>
-              <button className="text-xs text-slate-400 flex items-center space-x-1">
-                <span>查看全部</span>
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex space-x-6 overflow-x-auto scrollbar-hide pb-4">
-            {[
-              { title: '衍生品设计', time: '2026-05-12 13:59', img: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=400&auto=format&fit=crop' },
-              { title: '生成一个小马的视频', time: '2026-05-12 13:39', img: 'https://images.unsplash.com/photo-1614850523296-e8c1d4704a96?w=400&auto=format&fit=crop' },
-              { title: '自由画布', time: '2026-05-12 13:38', img: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=400&auto=format&fit=crop' },
-              { title: '场景设计', time: '2026-05-12 13:35', img: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=400&auto=format&fit=crop' },
-            ].map((item, idx) => (
-              <motion.div 
-                key={idx}
-                whileHover={{ y: -5 }}
-                className="w-72 shrink-0 glass rounded-3xl overflow-hidden cursor-pointer"
-              >
-                <div className="h-40 relative">
-                  <img src={item.img} className="w-full h-full object-cover opacity-50" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-10 h-10 border border-white/20 rounded-lg flex items-center justify-center">
-                      <span className="text-[10px] font-black opacity-30">OiiOii</span>
-                    </div>
+                <div className="relative h-36 overflow-hidden bg-white/5">
+                  <img src={project.image} alt={project.title} className="h-full w-full object-cover opacity-65 transition-transform duration-500 hover:scale-105" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#111] via-transparent to-transparent" />
+                  <div className="absolute left-4 top-4 rounded-full bg-black/50 px-3 py-1 text-[11px] font-semibold text-brand backdrop-blur">
+                    {project.status}
                   </div>
                 </div>
                 <div className="p-5">
-                  <h3 className="text-sm font-semibold">{item.title}</h3>
-                  <p className="text-[10px] text-slate-500 mt-1">{item.time}</p>
+                  <h3 className="text-lg font-bold text-slate-100">{project.title}</h3>
+                  <p className="mt-2 text-sm text-slate-500">{project.time}</p>
                 </div>
-              </motion.div>
+              </motion.button>
             ))}
           </div>
         </section>
 
-        {/* Highlights */}
-        <section className="pb-20">
-          <div className="flex items-center space-x-2 mb-6">
-            <Sparkles className="text-brand" size={18} />
-            <h2 className="text-xl font-bold">亮点</h2>
+        <section className="mt-16">
+          <div className="mb-6 flex items-center gap-3">
+            <Sparkles className="text-brand" size={22} />
+            <h2 className="text-3xl font-black tracking-tight">亮点</h2>
           </div>
           <div className="grid grid-cols-2 gap-6">
-             <div className="h-64 rounded-3xl bg-white/5 border border-white/5 relative overflow-hidden group">
-                <img src="https://images.unsplash.com/photo-1634157703432-3205030621aa?w=1000&auto=format&fit=crop" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform" />
-             </div>
-             <div className="h-64 rounded-3xl bg-white/5 border border-white/5 relative overflow-hidden group">
-                <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1000&auto=format&fit=crop" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform" />
-             </div>
+            {highlights.map((item) => (
+              <button key={item.title} onClick={onNavigate} className="group relative h-72 overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-left">
+                <img src={item.image} alt={item.title} className="h-full w-full object-cover opacity-65 transition-transform duration-700 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
+                <div className="absolute bottom-0 p-7">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-white">
+                    <Video size={20} />
+                  </div>
+                  <h3 className="text-2xl font-black text-white">{item.title}</h3>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{item.desc}</p>
+                </div>
+              </button>
+            ))}
           </div>
         </section>
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,0 +1,7 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prebuilt
+      args:
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre-alpine}

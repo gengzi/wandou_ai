@@ -8,7 +8,7 @@ import BackgroundStars from './components/BackgroundStars.tsx';
 import { AnimatePresence, motion } from 'motion/react';
 
 export default function App() {
-  const [view, setView] = useState<string>('workspace');
+  const [view, setView] = useState<string>('home');
 
   return (
     <div className="flex h-screen w-full bg-bg-dark overflow-hidden selection:bg-brand/30 selection:text-white relative">
@@ -70,4 +70,3 @@ export default function App() {
     </div>
   );
 }
-

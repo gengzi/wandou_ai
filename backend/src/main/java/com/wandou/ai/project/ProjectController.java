@@ -1,5 +1,6 @@
 package com.wandou.ai.project;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.common.ApiResponse;
 import com.wandou.ai.project.dto.ProjectCreateRequest;
 import com.wandou.ai.project.dto.ProjectResponse;
@@ -24,16 +25,19 @@ public class ProjectController {
     }
 
     @PostMapping
+    @SaCheckPermission("project:write")
     public ApiResponse<ProjectResponse> create(@Valid @RequestBody ProjectCreateRequest request) {
         return ApiResponse.ok(projectService.create(request));
     }
 
     @GetMapping
+    @SaCheckPermission("project:read")
     public ApiResponse<List<ProjectResponse>> list() {
         return ApiResponse.ok(projectService.list());
     }
 
     @GetMapping("/{projectId}")
+    @SaCheckPermission("project:read")
     public ApiResponse<ProjectResponse> detail(@PathVariable String projectId) {
         return projectService.get(projectId)
                 .map(ApiResponse::ok)
