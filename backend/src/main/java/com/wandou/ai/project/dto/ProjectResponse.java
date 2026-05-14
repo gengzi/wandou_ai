@@ -8,6 +8,7 @@ public record ProjectResponse(
         String description,
         String aspectRatio,
         String canvasId,
+        String conversationId,
         Instant createdAt
 ) {
 }

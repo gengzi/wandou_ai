@@ -3,11 +3,13 @@ import { motion } from 'motion/react';
 import { ChevronRight, Share2, Play, Plus, BrainCircuit, Wand2, Video, Languages, MessageSquare, ZoomIn, ZoomOut, MousePointer2, Send, Users, Paperclip, CopyPlus, Settings2, Scissors, Music, Layers, LayoutPanelLeft, RefreshCw } from 'lucide-react';
 import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap } from '@xyflow/react';
 import { ScriptNode, CharacterNode, ImagesNode, AudioNode } from './CanvasNodes';
+import { CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, createProject, createRunEventSource, getCanvas, ProjectResponse, SseEvent, startAgentRun } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
   character: CharacterNode,
   images: ImagesNode,
+  video: ImagesNode,
   audio: AudioNode,
 };
 
@@ -73,6 +75,50 @@ interface Message {
   timestamp: Date;
 }
 
+interface TaskItem {
+  id: string;
+  nodeId: string;
+  status: string;
+  progress: number;
+  message: string;
+}
+
+interface AssetItem {
+  id: string;
+  nodeId: string;
+  type: string;
+  name: string;
+  url: string;
+  thumbnailUrl: string;
+}
+
+function toFlowNode(node: CanvasNodeResponse): Node {
+  const flowType = node.type === 'video' ? 'video' : node.type;
+  return {
+    id: node.id,
+    type: flowType,
+    position: node.position,
+    data: {
+      ...node.data,
+      title: node.title,
+      status: node.status,
+      output: node.output,
+      imageSrc: typeof node.output?.thumbnailUrl === 'string' ? node.output.thumbnailUrl : undefined,
+    },
+  };
+}
+
+function toFlowEdge(edge: CanvasEdgeResponse): Edge {
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    type: 'default',
+    animated: true,
+    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' },
+  };
+}
+
 export default function WorkspaceView() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -88,25 +134,60 @@ export default function WorkspaceView() {
   );
 
   const [zoom, setZoom] = useState(35);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      sender: '系统',
-      role: 'agent',
-      content: '重新生成分镜6的视频，使其包含更多远景，少女抱着猫，窗外是浩瀚的宇宙',
-      timestamp: new Date()
-    },
-    {
-      id: '2',
-      sender: '导演',
-      role: 'agent',
-      content: '好的，我已经根据您的要求重新生成了分镜6的视频，增加了远景，并突出了少女抱着猫以及窗外浩瀚宇宙的场景。\n请问您对修改后的分镜视频是否满意？',
-      timestamp: new Date()
-    }
-  ]);
+  const [project, setProject] = useState<ProjectResponse | null>(null);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const processedEventIdsRef = useRef<Set<string>>(new Set());
+
+  const applyCanvas = useCallback((canvas: CanvasResponse) => {
+    setNodes(canvas.nodes.map(toFlowNode));
+    setEdges(canvas.edges.map(toFlowEdge));
+  }, [setEdges, setNodes]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initWorkspace() {
+      try {
+        const nextProject = await createProject({
+          name: 'Wandou Studio 项目',
+          description: '前后端联动工作区',
+          aspectRatio: '16:9',
+        });
+        if (cancelled) return;
+        setProject(nextProject);
+        const canvas = await getCanvas(nextProject.canvasId);
+        if (cancelled) return;
+        applyCanvas(canvas);
+        setMessages([
+          {
+            id: 'welcome',
+            sender: '系统',
+            role: 'agent',
+            content: '工作区已连接后端。输入创作指令后，Agent Run 会实时更新消息、任务队列和画布节点。',
+            timestamp: new Date(),
+          },
+        ]);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setSetupError(error instanceof Error ? error.message : '后端连接失败');
+        }
+      }
+    }
+
+    initWorkspace();
+    return () => {
+      cancelled = true;
+      eventSourceRef.current?.close();
+    };
+  }, [applyCanvas]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -114,14 +195,114 @@ export default function WorkspaceView() {
     }
   }, [messages, isTyping]);
 
+  const upsertNode = useCallback((node: CanvasNodeResponse) => {
+    setNodes((currentNodes) => {
+      const nextNode = toFlowNode(node);
+      const exists = currentNodes.some((item) => item.id === nextNode.id);
+      return exists
+        ? currentNodes.map((item) => item.id === nextNode.id ? { ...item, ...nextNode } : item)
+        : [...currentNodes, nextNode];
+    });
+  }, [setNodes]);
+
+  const updateNodeFromEvent = useCallback((nodeId: string, status?: string, output?: Record<string, unknown>) => {
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      const nextOutput = output ? { ...(node.data?.output as Record<string, unknown> | undefined), ...output } : node.data?.output;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          status: status || node.data?.status,
+          output: nextOutput,
+          imageSrc: typeof nextOutput?.thumbnailUrl === 'string' ? nextOutput.thumbnailUrl : node.data?.imageSrc,
+        },
+      };
+    }));
+  }, [setNodes]);
+
+  const upsertTask = useCallback((task: any) => {
+    if (!task?.id) return;
+    const nextTask: TaskItem = {
+      id: task.id,
+      nodeId: task.nodeId,
+      status: task.status,
+      progress: task.progress ?? 0,
+      message: task.message || '任务进行中',
+    };
+    setTasks((current) => {
+      const exists = current.some((item) => item.id === nextTask.id);
+      return exists
+        ? current.map((item) => item.id === nextTask.id ? nextTask : item)
+        : [nextTask, ...current];
+    });
+  }, []);
+
+  const handleRunEvent = useCallback((event: SseEvent<any>) => {
+    const eventKey = event.id || `${event.runId}:${event.event}:${event.createdAt}:${JSON.stringify(event.data)}`;
+    if (processedEventIdsRef.current.has(eventKey)) {
+      return;
+    }
+    processedEventIdsRef.current.add(eventKey);
+
+    const data = event.data || {};
+    if (event.event === 'message.delta') {
+      setIsTyping(true);
+    }
+
+    if (event.event === 'message.completed') {
+      setMessages((prev) => [...prev, {
+        id: `assistant-${event.runId}-${prev.length}`,
+        sender: data.sender || '导演',
+        role: 'agent',
+        content: data.content || '已完成处理。',
+        timestamp: new Date(event.createdAt),
+      }]);
+      setIsTyping(false);
+    }
+
+    if (event.event === 'node.created' && data.node) {
+      upsertNode(data.node);
+    }
+
+    if (event.event === 'node.updated') {
+      updateNodeFromEvent(data.nodeId, data.status, data.output);
+    }
+
+    if (event.event === 'task.created' || event.event === 'task.progress' || event.event === 'task.completed') {
+      upsertTask(data.task);
+    }
+
+    if (event.event === 'asset.created' && data.asset) {
+      const asset = data.asset as AssetItem;
+      setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      updateNodeFromEvent(asset.nodeId, 'success', {
+        assetId: asset.id,
+        thumbnailUrl: asset.thumbnailUrl,
+        url: asset.url,
+      });
+    }
+
+    if (event.event === 'run.completed' || event.event === 'run.failed') {
+      setIsTyping(false);
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+    }
+  }, [updateNodeFromEvent, upsertNode, upsertTask]);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
+    if (!project) {
+      setSetupError('项目尚未初始化完成，请稍后再试。');
+      return;
+    }
 
+    const message = inputValue;
     const userMessage: Message = {
       id: Date.now().toString(),
       sender: '用户',
       role: 'user',
-      content: inputValue,
+      content: message,
       timestamp: new Date()
     };
 
@@ -130,26 +311,53 @@ export default function WorkspaceView() {
     setIsTyping(true);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: inputValue, agentName: '导演' })
+      eventSourceRef.current?.close();
+      processedEventIdsRef.current = new Set();
+      const run = await startAgentRun({
+        projectId: project.id,
+        conversationId: project.conversationId,
+        canvasId: project.canvasId,
+        message,
+        agentName: '导演',
       });
-      
-      const data = await response.json();
-      
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: '导演',
-        role: 'agent',
-        content: data.text || "抱歉，我现在遇到了一些问题。",
-        timestamp: new Date()
-      };
 
-      setMessages(prev => [...prev, agentMessage]);
+      const source = createRunEventSource(run.runId);
+      eventSourceRef.current = source;
+      const eventNames = [
+        'run.started',
+        'message.delta',
+        'message.completed',
+        'node.created',
+        'node.updated',
+        'task.created',
+        'task.progress',
+        'task.completed',
+        'asset.created',
+        'run.completed',
+        'run.failed',
+      ];
+      eventNames.forEach((eventName) => {
+        source.addEventListener(eventName, (rawEvent) => {
+          const event = JSON.parse((rawEvent as MessageEvent).data) as SseEvent<any>;
+          handleRunEvent(event);
+        });
+      });
+      source.onerror = () => {
+        setIsTyping(false);
+        source.close();
+        if (eventSourceRef.current === source) {
+          eventSourceRef.current = null;
+        }
+      };
     } catch (error) {
       console.error(error);
-    } finally {
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        sender: '系统',
+        role: 'agent',
+        content: error instanceof Error ? `后端请求失败：${error.message}` : '后端请求失败。',
+        timestamp: new Date(),
+      }]);
       setIsTyping(false);
     }
   };
@@ -200,31 +408,35 @@ export default function WorkspaceView() {
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <div className="flex items-center space-x-2">
                 <BrainCircuit size={14} className="text-brand animate-pulse" />
-                <span className="text-xs font-bold text-slate-300">后台运行中 (2)</span>
+                <span className="text-xs font-bold text-slate-300">后台运行中 ({tasks.filter(task => task.status === 'running').length})</span>
               </div>
               <span className="text-[10px] text-slate-500">Queue</span>
             </div>
             <div className="space-y-2">
-                <div className="flex items-center justify-between text-[11px]">
-                   <div className="flex items-center space-x-2 text-slate-400">
-                      <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-                      <span>正在生成分镜 6 视频...</span>
-                   </div>
-                   <span className="text-slate-500 font-mono">45%</span>
+              {tasks.length === 0 ? (
+                <div className="text-[11px] text-slate-500">暂无后台任务</div>
+              ) : tasks.slice(0, 3).map((task) => (
+                <div key={task.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center space-x-2 text-slate-400 min-w-0">
+                      <div className={`w-1.5 h-1.5 rounded-full ${task.status === 'success' ? 'bg-brand' : 'bg-brand animate-pulse'}`} />
+                      <span className="truncate">{task.message}</span>
+                    </div>
+                    <span className="text-slate-500 font-mono">{task.progress}%</span>
+                  </div>
+                  <div className="w-full h-1 bg-[#0B0B0C] rounded-full overflow-hidden">
+                    <div className="h-full bg-brand rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all" style={{ width: `${task.progress}%` }}></div>
+                  </div>
                 </div>
-                <div className="w-full h-1 bg-[#0B0B0C] rounded-full overflow-hidden">
-                   <div className="h-full bg-brand w-[45%] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                </div>
-                
-                <div className="flex items-center justify-between text-[11px] pt-1">
-                   <div className="flex items-center space-x-2 text-slate-500">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                      <span>等待生成: 场景配乐 A1</span>
-                   </div>
-                   <span className="text-slate-600 font-mono">0%</span>
-                </div>
+              ))}
             </div>
           </div>
+
+          {setupError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-200">
+              {setupError}
+            </div>
+          )}
 
             <div className="space-y-6 mt-4">
               {messages.map((msg, idx) => (
@@ -257,17 +469,17 @@ export default function WorkspaceView() {
                         </div>
                       )}
 
-                      {idx === 0 && (
+                      {idx === 0 && assets[0] && (
                         <div className="aspect-video w-[180px] rounded-xl bg-slate-900 overflow-hidden relative group border border-white/5 mt-4">
-                           <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop" className="w-full h-full object-cover opacity-80" alt="Generated Output" />
+                           <img src={assets[0].thumbnailUrl} className="w-full h-full object-cover opacity-80" alt="Generated Output" />
                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
                               <button 
                                 onClick={() => {
                                   const newNode = {
                                     id: `video-${Date.now()}`,
-                                    type: 'images',
+                                    type: 'video',
                                     position: { x: 700, y: 300 },
-                                    data: { imageSrc: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop' }
+                                    data: { imageSrc: assets[0].thumbnailUrl, title: assets[0].name, status: 'success' }
                                   };
                                   setNodes((nds) => [...nds, newNode]);
                                   setEdges((eds) => [...eds, {

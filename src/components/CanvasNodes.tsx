@@ -4,6 +4,10 @@ import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, L
 
 export const ScriptNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
+  const title = data?.title || '智能剧本生成';
+  const status = data?.status || 'idle';
+  const summary = data?.output?.summary || '等待 Agent Run 生成剧本摘要。';
+  const style = data?.output?.style;
   
   return (
     <div className="w-[400px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
@@ -12,7 +16,8 @@ export const ScriptNode = ({ id, data }: any) => {
           <div className="w-6 h-6 rounded flex items-center justify-center bg-purple-500/20 text-purple-400">
             <Wand2 size={14} />
           </div>
-          <span className="text-xs font-bold text-slate-300">智能剧本生成</span>
+          <span className="text-xs font-bold text-slate-300">{title}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
@@ -29,7 +34,8 @@ export const ScriptNode = ({ id, data }: any) => {
             <span>剧本摘要</span>
             <span className="text-[9px] px-1.5 py-0.5 bg-brand/20 text-brand rounded">AI Generated</span>
           </h4>
-          <p className="text-[13px] text-slate-300 leading-relaxed bg-[#1A1A1C] p-3 rounded-xl border border-white/5">在充满未来科幻感的空间站，一名宇航少女在日常巡视中，意外发现了一只躲藏在角落里的机器小猫。通过这次救援，少女孤独的太空生活增添了一抹温暖的色彩。</p>
+          <p className="text-[13px] text-slate-300 leading-relaxed bg-[#1A1A1C] p-3 rounded-xl border border-white/5">{summary}</p>
+          {style && <p className="text-[11px] text-slate-500 mt-2">风格：{style}</p>}
         </div>
         <div>
           <h4 className="text-[11px] font-bold text-slate-400 mb-2">提取角色场景</h4>
@@ -58,6 +64,8 @@ export const ScriptNode = ({ id, data }: any) => {
 
 export const CharacterNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
+  const title = data?.title || '角色一致性生成 (Character Design)';
+  const status = data?.status || 'idle';
 
   return (
     <div className="w-[900px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
@@ -67,7 +75,8 @@ export const CharacterNode = ({ id, data }: any) => {
           <div className="w-6 h-6 rounded flex items-center justify-center bg-blue-500/20 text-blue-400">
             <ImageIcon size={14} />
           </div>
-          <span className="text-xs font-bold text-slate-300">角色一致性生成 (Character Design)</span>
+          <span className="text-xs font-bold text-slate-300">{title}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
           <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-slate-400">LoRA 模型应用</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -153,9 +162,12 @@ export const CharacterNode = ({ id, data }: any) => {
 
 export const ImagesNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
+  const title = data?.title || (data?.imageSrc ? '生成分镜视频' : '场景概念图生成');
+  const status = data?.status || 'idle';
+  const imageSrc = data?.imageSrc || data?.output?.thumbnailUrl;
 
   // 如果是视频节点
-  if (data?.imageSrc) {
+  if (imageSrc || data?.type === 'video' || title.includes('视频')) {
     return (
       <div className="w-[320px] bg-[#111112] p-3 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
         <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
@@ -180,13 +192,13 @@ export const ImagesNode = ({ id, data }: any) => {
         <div className="flex items-center justify-between mb-2 px-1">
           <div className="flex items-center space-x-1.5">
             <Video size={14} className="text-brand" />
-            <span className="text-xs font-bold text-slate-200">生成分镜视频</span>
+            <span className="text-xs font-bold text-slate-200">{title}</span>
           </div>
-          <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">Sora / Kling Model</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
         </div>
 
         <div className="aspect-video w-full rounded-xl bg-slate-900 overflow-hidden relative border border-white/5 cursor-pointer group/video">
-           <img src={data.imageSrc} className="w-full h-full object-cover" alt="Node media" />
+           <img src={imageSrc || 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop'} className="w-full h-full object-cover" alt="Node media" />
            <div className="absolute inset-0 bg-black/20 group-hover/video:bg-black/50 transition-colors flex items-center justify-center">
               <div className="w-12 h-12 rounded-full bg-brand/90 backdrop-blur-md flex items-center justify-center transform group-hover/video:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.4)] border border-white/10">
                 <Play size={22} className="fill-white text-white ml-1" />
@@ -225,8 +237,9 @@ export const ImagesNode = ({ id, data }: any) => {
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center space-x-1.5">
           <ImageIcon size={14} className="text-blue-400" />
-          <span className="text-xs font-bold text-slate-200">场景概念图生成</span>
+          <span className="text-xs font-bold text-slate-200">{title}</span>
         </div>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -264,6 +277,8 @@ export const ImagesNode = ({ id, data }: any) => {
 
 export const AudioNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
+  const title = data?.title || '生成音效配乐';
+  const status = data?.status || 'idle';
 
   return (
     <div className="w-[300px] bg-[#111112] p-4 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
@@ -274,7 +289,8 @@ export const AudioNode = ({ id, data }: any) => {
           <div className="w-6 h-6 rounded flex items-center justify-center bg-yellow-500/20 text-yellow-400">
             <Music size={14} />
           </div>
-          <span className="text-xs font-bold text-slate-200">生成音效配乐</span>
+          <span className="text-xs font-bold text-slate-200">{title}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
         </div>
         <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-white/10 rounded text-slate-400 transition-colors">
           <Trash2 size={12} />
@@ -300,4 +316,3 @@ export const AudioNode = ({ id, data }: any) => {
     </div>
   );
 };
-

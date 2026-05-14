@@ -2,6 +2,7 @@ package com.wandou.ai.agent;
 
 import com.wandou.ai.agent.dto.AgentRunRequest;
 import com.wandou.ai.agent.dto.AgentRunResponse;
+import com.wandou.ai.agent.dto.AgentRunDetailResponse;
 import com.wandou.ai.common.ApiResponse;
 import com.wandou.ai.sse.SseHub;
 import jakarta.validation.Valid;
@@ -29,6 +30,13 @@ public class AgentRunController {
     @PostMapping
     public ApiResponse<AgentRunResponse> start(@Valid @RequestBody AgentRunRequest request) {
         return ApiResponse.ok(agentRunService.start(request));
+    }
+
+    @GetMapping("/{runId}")
+    public ApiResponse<AgentRunDetailResponse> detail(@PathVariable String runId) {
+        return agentRunService.get(runId)
+                .map(ApiResponse::ok)
+                .orElseGet(() -> ApiResponse.fail("agent run not found"));
     }
 
     @GetMapping(value = "/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
