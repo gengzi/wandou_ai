@@ -1,4 +1,4 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const AUTH_TOKEN_KEY = 'wandou.auth.token';
 
 export interface ApiResponse<T> {
@@ -13,6 +13,28 @@ export interface AgentRunResponse {
   canvasId: string;
   status: string;
   streamUrl: string;
+}
+
+export interface AgentRunControlResponse {
+  runId: string;
+  status: string;
+  message: string;
+}
+
+export interface AgentRunDetailResponse {
+  runId: string;
+  projectId: string;
+  conversationId: string;
+  canvasId: string;
+  status: string;
+  agentName: string;
+  message: string;
+  error?: string;
+  checkpoint?: string;
+  streamUrl: string;
+  events: SseEvent[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectResponse {
@@ -67,6 +89,35 @@ export interface AssetResponse {
   createdAt: string;
 }
 
+export interface MessageResponse {
+  id: string;
+  conversationId: string;
+  role: string;
+  sender: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ConversationResponse {
+  id: string;
+  projectId: string;
+  messages: MessageResponse[];
+  updatedAt: string;
+}
+
+export interface TaskResponse {
+  id: string;
+  runId: string;
+  projectId: string;
+  canvasId: string;
+  nodeId: string;
+  type: string;
+  status: string;
+  progress: number;
+  message: string;
+  updatedAt: string;
+}
+
 export interface SseEvent<T = Record<string, unknown>> {
   id: string;
   event: string;
@@ -114,8 +165,16 @@ function authHeaders(headers?: HeadersInit): Headers {
   return nextHeaders;
 }
 
+function apiUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+  const base = API_BASE_URL || window.location.origin;
+  return new URL(path, base).toString();
+}
+
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl(url), {
     ...options,
     headers: authHeaders(options?.headers),
   });
@@ -131,7 +190,7 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function login(payload: { email: string; password: string }): Promise<LoginResponse> {
-  const result = await requestJson<LoginResponse>(`${API_BASE_URL}/api/auth/login`, {
+  const result = await requestJson<LoginResponse>('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -142,22 +201,22 @@ export async function login(payload: { email: string; password: string }): Promi
 
 export async function logout(): Promise<void> {
   try {
-    await requestJson<void>(`${API_BASE_URL}/api/auth/logout`, { method: 'POST' });
+    await requestJson<void>('/api/auth/logout', { method: 'POST' });
   } finally {
     clearAuthToken();
   }
 }
 
 export async function getCurrentUser(): Promise<UserResponse> {
-  return requestJson<UserResponse>(`${API_BASE_URL}/api/auth/me`);
+  return requestJson<UserResponse>('/api/auth/me');
 }
 
 export async function listUsers(): Promise<UserResponse[]> {
-  return requestJson<UserResponse[]>(`${API_BASE_URL}/api/users`);
+  return requestJson<UserResponse[]>('/api/users');
 }
 
 export async function inviteUser(payload: { name: string; email: string; role: string }): Promise<UserResponse> {
-  return requestJson<UserResponse>(`${API_BASE_URL}/api/users`, {
+  return requestJson<UserResponse>('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -165,7 +224,11 @@ export async function inviteUser(payload: { name: string; email: string; role: s
 }
 
 export async function listProjects(): Promise<ProjectResponse[]> {
-  return requestJson<ProjectResponse[]>(`${API_BASE_URL}/api/projects`);
+  return requestJson<ProjectResponse[]>('/api/projects');
+}
+
+export async function getProject(projectId: string): Promise<ProjectResponse> {
+  return requestJson<ProjectResponse>(`/api/projects/${projectId}`);
 }
 
 export async function createProject(payload: {
@@ -173,7 +236,7 @@ export async function createProject(payload: {
   description?: string;
   aspectRatio?: string;
 }): Promise<ProjectResponse> {
-  return requestJson<ProjectResponse>(`${API_BASE_URL}/api/projects`, {
+  return requestJson<ProjectResponse>('/api/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -181,11 +244,11 @@ export async function createProject(payload: {
 }
 
 export async function getCanvas(canvasId: string): Promise<CanvasResponse> {
-  return requestJson<CanvasResponse>(`${API_BASE_URL}/api/canvas/${canvasId}`);
+  return requestJson<CanvasResponse>(`/api/canvas/${canvasId}`);
 }
 
 export async function updateCanvasNodePosition(canvasId: string, nodeId: string, position: CanvasPosition): Promise<CanvasNodeResponse> {
-  return requestJson<CanvasNodeResponse>(`${API_BASE_URL}/api/canvas/${canvasId}/nodes/${nodeId}/position`, {
+  return requestJson<CanvasNodeResponse>(`/api/canvas/${canvasId}/nodes/${nodeId}/position`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ position }),
@@ -193,7 +256,7 @@ export async function updateCanvasNodePosition(canvasId: string, nodeId: string,
 }
 
 export async function createCanvasEdge(canvasId: string, payload: { source: string; target: string }): Promise<CanvasEdgeResponse> {
-  return requestJson<CanvasEdgeResponse>(`${API_BASE_URL}/api/canvas/${canvasId}/edges`, {
+  return requestJson<CanvasEdgeResponse>(`/api/canvas/${canvasId}/edges`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -201,7 +264,7 @@ export async function createCanvasEdge(canvasId: string, payload: { source: stri
 }
 
 export async function listAssets(projectId?: string): Promise<AssetResponse[]> {
-  const url = new URL(`${API_BASE_URL}/api/assets`);
+  const url = new URL(apiUrl('/api/assets'));
   if (projectId) {
     url.searchParams.set('projectId', projectId);
   }
@@ -217,7 +280,7 @@ export async function createAsset(payload: {
   url: string;
   thumbnailUrl?: string;
 }): Promise<AssetResponse> {
-  return requestJson<AssetResponse>(`${API_BASE_URL}/api/assets`, {
+  return requestJson<AssetResponse>('/api/assets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -233,18 +296,66 @@ export async function startAgentRun(payload: {
   mode?: string;
   nodeId?: string;
 }): Promise<AgentRunResponse> {
-  return requestJson<AgentRunResponse>(`${API_BASE_URL}/api/agent/runs`, {
+  return requestJson<AgentRunResponse>('/api/agent/runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 }
 
+export async function confirmAgentRun(runId: string, comment?: string): Promise<AgentRunControlResponse> {
+  return requestJson<AgentRunControlResponse>(`/api/agent/runs/${runId}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment }),
+  });
+}
+
+export async function interruptAgentRun(runId: string, comment?: string): Promise<AgentRunControlResponse> {
+  return requestJson<AgentRunControlResponse>(`/api/agent/runs/${runId}/interrupt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment }),
+  });
+}
+
+export async function resumeAgentRun(runId: string, comment?: string): Promise<AgentRunControlResponse> {
+  return requestJson<AgentRunControlResponse>(`/api/agent/runs/${runId}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment }),
+  });
+}
+
+export async function cancelAgentRun(runId: string, comment?: string): Promise<AgentRunControlResponse> {
+  return requestJson<AgentRunControlResponse>(`/api/agent/runs/${runId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment }),
+  });
+}
+
 export function createRunEventSource(runId: string): EventSource {
   const token = getAuthToken();
-  const url = new URL(`${API_BASE_URL}/api/agent/runs/${runId}/events`);
+  const url = new URL(apiUrl(`/api/agent/runs/${runId}/events`));
   if (token) {
     url.searchParams.set('Authorization', `Bearer ${token}`);
   }
   return new EventSource(url.toString());
+}
+
+export async function getAgentRun(runId: string): Promise<AgentRunDetailResponse> {
+  return requestJson<AgentRunDetailResponse>(`/api/agent/runs/${runId}`);
+}
+
+export async function getConversation(conversationId: string): Promise<ConversationResponse> {
+  return requestJson<ConversationResponse>(`/api/conversations/${conversationId}`);
+}
+
+export async function listTasks(projectId?: string): Promise<TaskResponse[]> {
+  const url = new URL(apiUrl('/api/tasks'));
+  if (projectId) {
+    url.searchParams.set('projectId', projectId);
+  }
+  return requestJson<TaskResponse[]>(url.toString());
 }

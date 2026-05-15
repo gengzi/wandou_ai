@@ -19,7 +19,7 @@ import { motion } from 'motion/react';
 import { listProjects, ProjectResponse } from '../lib/api';
 
 interface HomeViewProps {
-  onNavigate: (prompt?: string) => void;
+  onNavigate: (prompt?: string, projectId?: string) => void;
 }
 
 const quickActions = [
@@ -27,33 +27,6 @@ const quickActions = [
   { label: '自由画布', icon: Layers3 },
   { label: '角色设定', icon: Bot },
   { label: '分镜生成', icon: Film },
-];
-
-const fallbackRecentProjects = [
-  {
-    title: '宇宙少女与机器猫',
-    time: '2026-05-14 19:21',
-    status: '视频生成中',
-    image: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop',
-  },
-  {
-    title: '赛博茶馆短片',
-    time: '2026-05-13 22:48',
-    status: '分镜已完成',
-    image: 'https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=900&auto=format&fit=crop',
-  },
-  {
-    title: '品牌发布会概念片',
-    time: '2026-05-13 18:05',
-    status: '剧本修订',
-    image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=900&auto=format&fit=crop',
-  },
-  {
-    title: '古风角色一致性测试',
-    time: '2026-05-12 16:36',
-    status: '资产待审核',
-    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=900&auto=format&fit=crop',
-  },
 ];
 
 const highlights = [
@@ -72,18 +45,18 @@ const highlights = [
 export default function HomeView({ onNavigate }: HomeViewProps) {
   const [prompt, setPrompt] = useState('');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
 
   useEffect(() => {
     listProjects()
       .then(setProjects)
-      .catch(() => setProjects([]));
+      .catch(() => setProjects([]))
+      .finally(() => setLoadingProjects(false));
   }, []);
 
   const recentProjects = useMemo(() => {
-    if (projects.length === 0) {
-      return fallbackRecentProjects;
-    }
     return projects.slice(0, 4).map((project) => ({
+      id: project.id,
       title: project.name,
       time: new Date(project.createdAt).toLocaleString(),
       status: project.aspectRatio,
@@ -219,12 +192,24 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
             </div>
           </div>
 
+          {loadingProjects ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-8 text-sm text-slate-400">
+              正在从后端加载项目...
+            </div>
+          ) : recentProjects.length === 0 ? (
+            <button
+              onClick={() => onNavigate()}
+              className="w-full rounded-2xl border border-dashed border-white/15 bg-white/[0.035] p-8 text-left text-sm text-slate-400 transition-colors hover:border-brand/40 hover:bg-brand/10"
+            >
+              后端暂无项目。创建第一个项目后，它会出现在这里。
+            </button>
+          ) : (
           <div className="grid grid-cols-4 gap-5">
             {recentProjects.map((project) => (
               <motion.button
-                key={project.title}
+                key={project.id}
                 whileHover={{ y: -4 }}
-                onClick={() => onNavigate()}
+                onClick={() => onNavigate(undefined, project.id)}
                 className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
               >
                 <div className="relative h-36 overflow-hidden bg-white/5">
@@ -241,6 +226,7 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               </motion.button>
             ))}
           </div>
+          )}
         </section>
 
         <section className="mt-16">

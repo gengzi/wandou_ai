@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw } from 'lucide-react';
+import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, createCanvasEdge, createProject, createRunEventSource, getCanvas, ProjectResponse, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
+import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, getCanvas, getConversation, getProject, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -94,8 +94,14 @@ interface AssetItem {
   thumbnailUrl: string;
 }
 
+interface ConfirmationState {
+  checkpoint: string;
+  message: string;
+}
+
 interface WorkspaceViewProps {
   initialPrompt?: string;
+  projectId?: string;
 }
 
 function toFlowNode(node: CanvasNodeResponse): Node {
@@ -125,7 +131,38 @@ function toFlowEdge(edge: CanvasEdgeResponse): Edge {
   };
 }
 
-export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
+function toMessage(message: ConversationResponse['messages'][number]): Message {
+  return {
+    id: message.id,
+    sender: message.sender || (message.role === 'user' ? '用户' : 'Agent'),
+    role: message.role === 'user' ? 'user' : 'agent',
+    content: message.content,
+    timestamp: new Date(message.createdAt),
+  };
+}
+
+function toTask(task: TaskResponse): TaskItem {
+  return {
+    id: task.id,
+    nodeId: task.nodeId,
+    status: task.status,
+    progress: task.progress,
+    message: task.message,
+  };
+}
+
+function toAsset(asset: AssetResponse): AssetItem {
+  return {
+    id: asset.id,
+    nodeId: asset.nodeId,
+    type: asset.type,
+    name: asset.name,
+    url: asset.url,
+    thumbnailUrl: asset.thumbnailUrl,
+  };
+}
+
+export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
@@ -137,6 +174,9 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeInstruction, setNodeInstruction] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<string>('idle');
+  const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -145,6 +185,17 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
 
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const runningTaskCount = tasks.filter(task => task.status === 'running').length;
+  const runStatusText = confirmation
+    ? confirmation.message
+    : runStatus === 'interrupted'
+      ? '已打断，等待恢复或取消。'
+      : runStatus === 'success'
+        ? '本次多 Agent 生成已完成。'
+        : runStatus === 'cancelled'
+          ? '本次生成已取消。'
+          : runStatus === 'failed'
+            ? '本次生成失败，请查看后端错误。'
+            : '多 Agent 生成流程运行中';
 
   const upsertEdge = useCallback((edge: CanvasEdgeResponse) => {
     const nextEdge = toFlowEdge(edge);
@@ -203,25 +254,36 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
 
     async function initWorkspace() {
       try {
-        const nextProject = await createProject({
-          name: 'Wandou Studio 项目',
-          description: '前后端联动工作区',
-          aspectRatio: '16:9',
-        });
+        setSetupError(null);
+        const nextProject = projectId
+          ? await getProject(projectId)
+          : await createProject({
+              name: 'Wandou Studio 项目',
+              description: '前后端联动工作区',
+              aspectRatio: '16:9',
+            });
         if (cancelled) return;
         setProject(nextProject);
-        const canvas = await getCanvas(nextProject.canvasId);
+        const [canvas, conversation, nextTasks, nextAssets] = await Promise.all([
+          getCanvas(nextProject.canvasId),
+          getConversation(nextProject.conversationId),
+          listTasks(nextProject.id),
+          listAssets(nextProject.id),
+        ]);
         if (cancelled) return;
         applyCanvas(canvas);
-        setMessages([
-          {
-            id: 'welcome',
-            sender: '系统',
-            role: 'agent',
-            content: '工作区已连接后端。输入创作指令后，Agent Run 会实时更新消息、任务队列和画布节点。',
-            timestamp: new Date(),
-          },
-        ]);
+        setTasks(nextTasks.map(toTask));
+        setAssets(nextAssets.map(toAsset));
+        const nextMessages = conversation.messages.map(toMessage);
+        setMessages(nextMessages.length > 0
+          ? nextMessages
+          : [{
+              id: 'welcome',
+              sender: '系统',
+              role: 'agent',
+              content: '工作区已连接后端。输入创作指令后，Agent Run 会实时更新消息、任务队列和画布节点。',
+              timestamp: new Date(),
+            }]);
       } catch (error) {
         console.error(error);
         if (!cancelled) {
@@ -235,7 +297,7 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
       cancelled = true;
       eventSourceRef.current?.close();
     };
-  }, [applyCanvas]);
+  }, [applyCanvas, projectId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -294,6 +356,10 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
     processedEventIdsRef.current.add(eventKey);
 
     const data = event.data || {};
+    if (event.event === 'run.started') {
+      setRunStatus('running');
+    }
+
     if (event.event === 'message.delta') {
       setIsTyping(true);
     }
@@ -325,6 +391,42 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
       upsertTask(data.task);
     }
 
+    if (event.event === 'agent.step.started') {
+      setRunStatus('running');
+      setMessages((prev) => [...prev, {
+        id: `step-${event.runId}-${event.id}`,
+        sender: data.agentName || 'Agent',
+        role: 'agent',
+        content: `开始：${data.title || data.step}`,
+        timestamp: new Date(event.createdAt),
+      }]);
+    }
+
+    if (event.event === 'agent.confirmation.required') {
+      setRunStatus('waiting_confirmation');
+      setIsTyping(false);
+      setConfirmation({
+        checkpoint: String(data.checkpoint || 'review'),
+        message: String(data.message || '请确认后继续。'),
+      });
+    }
+
+    if (event.event === 'agent.confirmation.accepted') {
+      setConfirmation(null);
+      setRunStatus('running');
+      setIsTyping(true);
+    }
+
+    if (event.event === 'run.interrupted') {
+      setRunStatus('interrupted');
+      setIsTyping(false);
+    }
+
+    if (event.event === 'run.resumed') {
+      setRunStatus('running');
+      setIsTyping(true);
+    }
+
     if (event.event === 'asset.created' && data.asset) {
       const asset = data.asset as AssetItem;
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
@@ -335,10 +437,13 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
       });
     }
 
-    if (event.event === 'run.completed' || event.event === 'run.failed') {
+    if (event.event === 'run.completed' || event.event === 'run.failed' || event.event === 'run.cancelled') {
+      setRunStatus(event.event === 'run.completed' ? 'success' : event.event === 'run.cancelled' ? 'cancelled' : 'failed');
+      setConfirmation(null);
       setIsTyping(false);
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
+      setActiveRunId(null);
     }
   }, [updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
 
@@ -375,12 +480,22 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
         nodeId: options?.nodeId,
       });
 
+      setActiveRunId(run.runId);
+      setRunStatus('running');
+      setConfirmation(null);
       const source = createRunEventSource(run.runId);
       eventSourceRef.current = source;
       const eventNames = [
         'run.started',
         'message.delta',
         'message.completed',
+        'agent.step.started',
+        'agent.step.completed',
+        'agent.confirmation.required',
+        'agent.confirmation.accepted',
+        'run.interrupted',
+        'run.resumed',
+        'run.cancelled',
         'node.created',
         'node.updated',
         'edge.created',
@@ -417,6 +532,55 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
     }
   }, [handleRunEvent, project]);
 
+  const handleConfirmRun = async () => {
+    if (!activeRunId) return;
+    try {
+      const result = await confirmAgentRun(activeRunId, '前端确认继续');
+      setRunStatus(result.status);
+      setConfirmation(null);
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `确认失败：${error.message}` : '确认失败。');
+    }
+  };
+
+  const handleInterruptRun = async () => {
+    if (!activeRunId) return;
+    try {
+      const result = await interruptAgentRun(activeRunId, '用户从前端打断当前生成流程');
+      setRunStatus(result.status);
+      setIsTyping(false);
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `打断失败：${error.message}` : '打断失败。');
+    }
+  };
+
+  const handleResumeRun = async () => {
+    if (!activeRunId) return;
+    try {
+      const result = await resumeAgentRun(activeRunId, '用户恢复当前生成流程');
+      setRunStatus(result.status);
+      setIsTyping(true);
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `恢复失败：${error.message}` : '恢复失败。');
+    }
+  };
+
+  const handleCancelRun = async () => {
+    if (!activeRunId) return;
+    try {
+      const result = await cancelAgentRun(activeRunId, '用户取消当前生成流程');
+      setRunStatus(result.status);
+      setConfirmation(null);
+      setIsTyping(false);
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `取消失败：${error.message}` : '取消失败。');
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
     await runAgent(inputValue);
@@ -448,16 +612,16 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
       {/* Interaction Sidebar (Left) */}
       <div className="hidden lg:flex lg:w-[320px] xl:w-[360px] h-full border-r border-white/5 bg-[#121213] flex-col z-20 shadow-2xl relative">
         {/* Top Header of Sidebar */}
-        <header className="h-[60px] flex items-center justify-between px-4 xl:px-6 border-b border-white/5 bg-[#121213]">
-          <div className="flex items-center space-x-3">
-             <div className="w-8 h-8 rounded bg-brand flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+        <header className="h-[60px] flex items-center justify-between gap-3 px-4 border-b border-white/5 bg-[#121213]">
+          <div className="flex min-w-0 items-center space-x-3">
+             <div className="w-8 h-8 shrink-0 rounded bg-brand flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.3)]">
                 <span className="text-white font-black text-sm italic">W</span>
              </div>
-             <h1 className="text-[14px] font-bold text-white tracking-wide truncate w-28 xl:w-40">Wandou Studio</h1>
+             <h1 className="min-w-0 truncate text-[14px] font-bold text-white tracking-wide">Wandou Studio</h1>
           </div>
-          <div className="flex items-center space-x-2 xl:space-x-3">
+          <div className="flex shrink-0 items-center space-x-2">
              {/* Credits */}
-             <div className="hidden xl:flex items-center space-x-1.5 px-3 py-1.5 bg-brand/10 border border-brand/20 rounded-full cursor-pointer hover:bg-brand/20 transition-colors tooltip" aria-label="算力点数">
+             <div className="hidden 2xl:flex items-center space-x-1.5 whitespace-nowrap px-3 py-1.5 bg-brand/10 border border-brand/20 rounded-full cursor-pointer hover:bg-brand/20 transition-colors tooltip" aria-label="算力点数">
                 <div className="w-3.5 h-3.5 rounded-full bg-brand flex items-center justify-center">
                   <Wand2 size={8} className="text-white" />
                 </div>
@@ -466,19 +630,17 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
              </div>
              
              {/* Tasks */}
-             <button className="relative p-2 text-slate-400 hover:text-white transition-colors">
+             <button className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="任务">
                <Video size={18} />
                <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full border border-[#121213]"></span>
              </button>
 
              {/* Share */}
-             <button className="bg-white/5 p-2 xl:px-3 xl:py-1.5 rounded-lg hover:bg-white/10 text-[12px] font-medium flex items-center xl:space-x-1.5 border border-white/10 transition-colors" title="分享">
+             <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="分享" aria-label="分享">
                 <Share2 size={14} className="opacity-80" />
-                <span className="hidden xl:inline">分享</span>
              </button>
-             <button className="bg-brand p-2 xl:px-3 xl:py-1.5 rounded-lg hover:bg-brand/90 text-[12px] text-white font-medium flex items-center xl:space-x-1.5 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition-colors" title="导出项目">
+             <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors" title="导出项目" aria-label="导出项目">
                 <Play size={14} className="fill-white" />
-                <span className="hidden xl:inline">导出项目</span>
              </button>
           </div>
         </header>
@@ -519,6 +681,64 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
             </div>
           )}
 
+          {(activeRunId || confirmation || runStatus !== 'idle') && (
+            <div className="rounded-xl border border-white/10 bg-[#1A1A1C] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">AgentScope Run</div>
+                  <div className="mt-1 truncate text-[13px] font-semibold text-slate-200">
+                    {runStatusText}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400">{runStatus}</span>
+              </div>
+
+              {confirmation && (
+                <div className="rounded-lg border border-brand/30 bg-brand/10 p-3 text-[12px] leading-5 text-brand">
+                  检查点：{confirmation.checkpoint}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleConfirmRun}
+                  disabled={!activeRunId || !confirmation || runStatus === 'interrupted'}
+                  className="flex items-center justify-center space-x-1.5 rounded-lg bg-brand px-3 py-2 text-[12px] font-bold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>确认继续</span>
+                </button>
+                {runStatus === 'interrupted' ? (
+                  <button
+                    onClick={handleResumeRun}
+                    disabled={!activeRunId}
+                    className="flex items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RefreshCw size={14} />
+                    <span>恢复</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleInterruptRun}
+                    disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                    className="flex items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <PauseCircle size={14} />
+                    <span>打断</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleCancelRun}
+                  disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                  className="col-span-2 flex items-center justify-center space-x-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-bold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <XCircle size={14} />
+                  <span>取消本次生成</span>
+                </button>
+              </div>
+            </div>
+          )}
+
             <div className="space-y-6 mt-4">
               {messages.map((msg, idx) => (
                 <div key={msg.id} className="space-y-4">
@@ -536,47 +756,12 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
                           {msg.content}
                         </div>
                       )}
-                      
-                      {idx === 0 && (
-                        <div className="space-y-2">
-                           {['生成故事视频', '已生成 1 个视频'].map((step, i) => (
-                              <div key={i} className="flex items-center space-x-3 p-3 rounded-xl bg-transparent border border-white/5">
-                                <div className="w-4 h-4 rounded-full border border-slate-500 flex items-center justify-center">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                </div>
-                                <span className="text-[13px] text-slate-300">{step}</span>
-                              </div>
-                           ))}
-                        </div>
-                      )}
 
                       {idx === 0 && assets[0] && (
                         <div className="aspect-video w-[180px] rounded-xl bg-slate-900 overflow-hidden relative group border border-white/5 mt-4">
                            <img src={assets[0].thumbnailUrl} className="w-full h-full object-cover opacity-80" alt="Generated Output" />
-                           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                              <button 
-                                onClick={() => {
-                                  const newNode = {
-                                    id: `video-${Date.now()}`,
-                                    type: 'video',
-                                    position: { x: 700, y: 300 },
-                                    data: { imageSrc: assets[0].thumbnailUrl, title: assets[0].name, status: 'success' }
-                                  };
-                                  setNodes((nds) => [...nds, newNode]);
-                                  setEdges((eds) => [...eds, {
-                                    id: `e-char-video-${Date.now()}`,
-                                    source: 'char-1',
-                                    target: newNode.id,
-                                    type: 'default',
-                                    animated: true,
-                                    style: { stroke: '#10B981', strokeWidth: 2, strokeDasharray: '4 4' }
-                                  }]);
-                                }}
-                                className="px-3 py-1.5 rounded-lg bg-brand text-white text-[11px] font-medium flex items-center space-x-1 cursor-pointer hover:bg-brand/80"
-                              >
-                                <Plus size={12} />
-                                <span>添加到画布</span>
-                              </button>
+                           <div className="absolute bottom-2 left-2 right-2 truncate rounded-lg bg-black/50 px-2 py-1 text-[10px] text-slate-200 backdrop-blur">
+                             {assets[0].name}
                            </div>
                         </div>
                       )}
@@ -587,12 +772,6 @@ export default function WorkspaceView({ initialPrompt }: WorkspaceViewProps) {
                         </div>
                       )}
 
-                      {idx === 1 && (
-                        <div className="space-y-2 mt-6">
-                           <button className="w-full py-2.5 rounded-xl bg-white/5 border border-white/5 text-[13px] hover:bg-white/10 text-slate-200 transition-colors">满意</button>
-                           <button className="w-full py-2.5 rounded-xl bg-white/5 border border-white/5 text-[13px] hover:bg-white/10 text-slate-400 transition-colors">差点意思，给我些修改建议</button>
-                        </div>
-                      )}
                     </>
                   )}
                 </div>

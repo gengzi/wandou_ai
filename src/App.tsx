@@ -12,6 +12,7 @@ import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, UserRespon
 export default function App() {
   const [view, setView] = useState<string>('home');
   const [initialPrompt, setInitialPrompt] = useState('');
+  const [workspaceProjectId, setWorkspaceProjectId] = useState<string | undefined>();
   const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(Boolean(getAuthToken()));
 
@@ -26,12 +27,13 @@ export default function App() {
       .finally(() => setCheckingSession(false));
   }, []);
 
-  const openWorkspace = (prompt?: string) => {
+  const openWorkspace = (prompt?: string, projectId?: string) => {
     if (prompt?.trim()) {
       setInitialPrompt(prompt.trim());
     } else {
       setInitialPrompt('');
     }
+    setWorkspaceProjectId(projectId);
     setView('workspace');
   };
 
@@ -99,7 +101,7 @@ export default function App() {
               exit={{ opacity: 0, scale: 1.02 }}
               className="w-full h-full"
             >
-              <WorkspaceView initialPrompt={initialPrompt} />
+              <WorkspaceView initialPrompt={initialPrompt} projectId={workspaceProjectId} />
             </motion.div>
           )}
         </AnimatePresence>

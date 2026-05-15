@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import { Readable } from "stream";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -45,6 +46,44 @@ async function startServer() {
     } catch (error: any) {
       console.error("Gemini Error:", error);
       res.status(500).json({ error: error.message || "Failed to generate response" });
+    }
+  });
+
+  app.use("/api", async (req, res) => {
+    const backendBaseUrl = process.env.BACKEND_URL || "http://localhost:8080";
+    const targetUrl = new URL(req.originalUrl, backendBaseUrl);
+    const headers = new Headers();
+
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (!value || key.toLowerCase() === "host" || key.toLowerCase() === "content-length") {
+        continue;
+      }
+      headers.set(key, Array.isArray(value) ? value.join(",") : value);
+    }
+
+    try {
+      const upstream = await fetch(targetUrl, {
+        method: req.method,
+        headers,
+        body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(req.body ?? {}),
+      });
+
+      res.status(upstream.status);
+      upstream.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      if (!upstream.body) {
+        res.end();
+        return;
+      }
+
+      Readable.fromWeb(upstream.body as any).pipe(res);
+    } catch (error: any) {
+      res.status(502).json({
+        success: false,
+        message: `Backend proxy failed: ${error.message || "unknown error"}`,
+      });
     }
   });
 

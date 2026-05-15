@@ -1,9 +1,13 @@
 package com.wandou.ai.agent;
 
+import com.wandou.ai.agent.dto.AgentRunControlRequest;
+import com.wandou.ai.agent.dto.AgentRunControlResponse;
 import com.wandou.ai.agent.dto.AgentRunDetailResponse;
 import com.wandou.ai.agent.dto.AgentRunRequest;
 import com.wandou.ai.agent.dto.AgentRunResponse;
-import com.wandou.ai.agent.llm.LlmProvider;
+import com.wandou.ai.agent.runtime.VideoAgentOutput;
+import com.wandou.ai.agent.runtime.VideoAgentRuntime;
+import com.wandou.ai.agent.runtime.VideoAgentStep;
 import com.wandou.ai.asset.AssetService;
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.canvas.dto.CanvasEdgeResponse;
@@ -19,12 +23,19 @@ import com.wandou.ai.sse.SseEvent;
 import com.wandou.ai.sse.SseHub;
 import com.wandou.ai.task.TaskService;
 import com.wandou.ai.task.dto.TaskResponse;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,32 +43,32 @@ import java.util.concurrent.Executors;
 @Service
 public class AgentRunService {
 
-    private final LlmProvider llmProvider;
     private final SseHub sseHub;
     private final ProjectService projectService;
     private final CanvasService canvasService;
     private final ConversationService conversationService;
     private final TaskService taskService;
     private final AssetService assetService;
+    private final VideoAgentRuntime videoAgentRuntime;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
 
     public AgentRunService(
-            LlmProvider llmProvider,
             SseHub sseHub,
             ProjectService projectService,
             CanvasService canvasService,
             ConversationService conversationService,
             TaskService taskService,
-            AssetService assetService
+            AssetService assetService,
+            VideoAgentRuntime videoAgentRuntime
     ) {
-        this.llmProvider = llmProvider;
         this.sseHub = sseHub;
         this.projectService = projectService;
         this.canvasService = canvasService;
         this.conversationService = conversationService;
         this.taskService = taskService;
         this.assetService = assetService;
+        this.videoAgentRuntime = videoAgentRuntime;
     }
 
     public AgentRunResponse start(AgentRunRequest request) {
@@ -88,10 +99,80 @@ public class AgentRunService {
         return run == null ? Optional.empty() : Optional.of(run.toDetail(sseHub.replay(runId)));
     }
 
+    public AgentRunControlResponse confirm(String runId, AgentRunControlRequest request) {
+        MutableAgentRun run = requireRun(runId);
+        synchronized (run.monitor) {
+            if (!"waiting_confirmation".equals(run.status)) {
+                return new AgentRunControlResponse(runId, run.status, "当前运行不在等待确认状态");
+            }
+            run.confirmationComment = commentOf(request);
+            run.checkpoint = null;
+            mark(run, "running", null);
+            run.monitor.notifyAll();
+        }
+        publish(runId, "agent.confirmation.accepted", Map.of(
+                "runId", runId,
+                "comment", commentOf(request)
+        ));
+        return new AgentRunControlResponse(runId, "running", "已确认，继续执行");
+    }
+
+    public AgentRunControlResponse interrupt(String runId, AgentRunControlRequest request) {
+        MutableAgentRun run = requireRun(runId);
+        synchronized (run.monitor) {
+            run.interrupted = true;
+            run.interruptComment = commentOf(request);
+            for (AgentBase agent : run.activeAgents) {
+                agent.interrupt(userInterruptMessage(run.interruptComment));
+            }
+            mark(run, "interrupted", null);
+            run.monitor.notifyAll();
+        }
+        publish(runId, "run.interrupted", Map.of(
+                "runId", runId,
+                "comment", commentOf(request)
+        ));
+        return new AgentRunControlResponse(runId, "interrupted", "已打断，等待恢复或取消");
+    }
+
+    public AgentRunControlResponse resume(String runId, AgentRunControlRequest request) {
+        MutableAgentRun run = requireRun(runId);
+        synchronized (run.monitor) {
+            run.interrupted = false;
+            run.interruptComment = null;
+            run.resumeComment = commentOf(request);
+            mark(run, run.checkpoint == null ? "running" : "waiting_confirmation", null);
+            run.monitor.notifyAll();
+        }
+        publish(runId, "run.resumed", Map.of(
+                "runId", runId,
+                "comment", commentOf(request)
+        ));
+        return new AgentRunControlResponse(runId, run.status, "已恢复");
+    }
+
+    public AgentRunControlResponse cancel(String runId, AgentRunControlRequest request) {
+        MutableAgentRun run = requireRun(runId);
+        synchronized (run.monitor) {
+            run.cancelled = true;
+            run.cancelComment = commentOf(request);
+            for (AgentBase agent : run.activeAgents) {
+                agent.interrupt(userInterruptMessage(run.cancelComment));
+            }
+            run.checkpoint = null;
+            mark(run, "cancelled", null);
+            run.monitor.notifyAll();
+        }
+        publish(runId, "run.cancelled", Map.of(
+                "runId", runId,
+                "comment", commentOf(request)
+        ));
+        return new AgentRunControlResponse(runId, "cancelled", "已取消");
+    }
+
     private void execute(MutableAgentRun run, AgentRunRequest request) {
         String runId = run.runId;
         mark(run, "running", null);
-        sleep(300);
         publish(runId, "run.started", Map.of(
                 "runId", runId,
                 "projectId", run.projectId,
@@ -99,11 +180,10 @@ public class AgentRunService {
                 "canvasId", run.canvasId
         ));
 
-        sleep(500);
         publish(runId, "message.delta", Map.of(
                 "role", "assistant",
                 "sender", run.agentName,
-                "content", "我先理解你的创作需求，并拆成剧本、分镜和视频任务。"
+                "content", "我会用 AgentScope 多 Agent 流程拆解创作需求，并在关键节点等你确认。"
         ));
 
         try {
@@ -112,55 +192,39 @@ public class AgentRunService {
                 return;
             }
 
-            String assistantText = llmProvider.generate(run.agentName, request.message());
-            conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, assistantText);
-            sleep(600);
+            VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run);
+            VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(request.message(), listener);
+            VideoAgentOutput scriptOutput = planOutputs.require(VideoAgentStep.SCRIPT);
+
+            conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, scriptOutput.text());
             publish(runId, "message.completed", Map.of(
                     "role", "assistant",
                     "sender", run.agentName,
-                    "content", assistantText
+                    "content", scriptOutput.text()
             ));
 
-            sleep(400);
             CanvasNodeResponse scriptNode = updateNode(run, "script-1", "running", Map.of(
                     "prompt", request.message(),
                     "agentName", run.agentName,
                     "step", "script"
             ));
+            CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", scriptOutput.output());
+            publishNodeUpdated(run, updatedScriptNode);
+            waitForConfirmation(run, "script", "剧本已完成，请确认后继续角色、分镜和关键帧设计。");
 
-            sleep(700);
-            CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", Map.of(
-                    "summary", "根据用户输入生成短视频剧本：" + request.message(),
-                    "style", "电影感、AI 视频、分镜化",
-                    "beats", java.util.List.of("开场建立空间与人物", "角色互动带出情绪", "镜头推进到核心奇观", "收束为可生成视频任务")
-            ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedScriptNode.id(),
-                    "status", updatedScriptNode.status(),
-                    "output", updatedScriptNode.output()
-            ));
+            VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(request.message(), listener);
+            VideoAgentOutput characterOutput = designOutputs.require(VideoAgentStep.CHARACTER);
+            VideoAgentOutput storyboardOutput = designOutputs.require(VideoAgentStep.STORYBOARD);
+            VideoAgentOutput visualOutput = designOutputs.require(VideoAgentStep.VISUAL);
+            VideoAgentOutput audioOutput = designOutputs.require(VideoAgentStep.AUDIO);
 
-            sleep(350);
             CanvasNodeResponse characterNode = updateNode(run, "char-1", "running", Map.of(
                     "sourceNodeId", scriptNode.id(),
                     "step", "character"
             ));
+            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", characterOutput.output());
+            publishNodeUpdated(run, updatedCharacterNode);
 
-            sleep(650);
-            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", Map.of(
-                    "characters", java.util.List.of(
-                            Map.of("name", "未来宇航少女", "prompt", "粉色长发、白色轻量宇航服、蓝色发光线条、温柔但坚定"),
-                            Map.of("name", "机器伙伴", "prompt", "圆润金属外壳、蓝色电子眼、小型陪伴机器人、可爱且有情绪")
-                    ),
-                    "consistency", "主角、伙伴与服装材质会作为后续关键帧和视频提示词的固定引用。"
-            ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedCharacterNode.id(),
-                    "status", updatedCharacterNode.status(),
-                    "output", updatedCharacterNode.output()
-            ));
-
-            sleep(400);
             CanvasNodeResponse storyboardNode = addNode(run,
                     run.canvasId,
                     "storyboard",
@@ -171,41 +235,25 @@ public class AgentRunService {
             );
             addEdge(run, scriptNode.id(), storyboardNode.id());
             addEdge(run, characterNode.id(), storyboardNode.id());
+            CanvasNodeResponse updatedStoryboardNode = canvasService.updateNode(run.canvasId, storyboardNode.id(), "success", storyboardOutput.output());
+            publishNodeUpdated(run, updatedStoryboardNode);
 
-            sleep(700);
-            CanvasNodeResponse updatedStoryboardNode = canvasService.updateNode(run.canvasId, storyboardNode.id(), "success", Map.of(
-                    "scenes", java.util.List.of(
-                            Map.of("shot", "01", "duration", "2s", "content", "空间站舷窗前建立场景，星云慢慢铺开。"),
-                            Map.of("shot", "02", "duration", "3s", "content", "少女抱紧机器伙伴，镜头轻推，角色眼神反射星光。"),
-                            Map.of("shot", "03", "duration", "3s", "content", "窗外星云流动，机器伙伴亮起蓝色光环，情绪到达高潮。")
-                    ),
-                    "camera", "自动混合推镜头、轻微横移和景深变化"
-            ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedStoryboardNode.id(),
-                    "status", updatedStoryboardNode.status(),
-                    "output", updatedStoryboardNode.output()
-            ));
-
-            sleep(350);
             CanvasNodeResponse imageNode = updateNode(run, "img-1", "running", Map.of(
                     "sourceNodeId", storyboardNode.id(),
                     "step", "keyframe"
             ));
+            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", visualOutput.output());
+            publishNodeUpdated(run, updatedImageNode);
 
-            sleep(650);
-            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", Map.of(
-                    "prompt", "cinematic space station window, nebula outside, astronaut girl holding cute robot companion, consistent character design, 16:9",
-                    "thumbnailUrl", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop",
-                    "frames", java.util.List.of("建立镜头关键帧", "角色情绪关键帧", "星云奇观关键帧")
+            CanvasNodeResponse audioNode = updateNode(run, "audio-1", "running", Map.of(
+                    "sourceNodeId", storyboardNode.id(),
+                    "step", "audio"
             ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedImageNode.id(),
-                    "status", updatedImageNode.status(),
-                    "output", updatedImageNode.output()
-            ));
+            CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", audioOutput.output());
+            publishNodeUpdated(run, updatedAudioNode);
 
-            sleep(400);
+            waitForConfirmation(run, "storyboard", "角色、分镜、关键帧和声音设计已完成，请确认后创建视频生成任务。");
+
             CanvasNodeResponse videoNode = addNode(run,
                     run.canvasId,
                     "video",
@@ -221,7 +269,8 @@ public class AgentRunService {
             publish(runId, "task.created", Map.of("task", task));
 
             for (int progress : new int[]{10, 35, 65, 90}) {
-                sleep(500);
+                ensureCanContinue(run);
+                sleep(180);
                 TaskResponse updatedTask = taskService.update(
                         task.id(),
                         "running",
@@ -230,6 +279,10 @@ public class AgentRunService {
                 );
                 publish(runId, "task.progress", Map.of("task", updatedTask));
             }
+
+            waitForConfirmation(run, "final-review", "视频任务已接近完成，请确认后合成成片并写入资产库。");
+            VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(request.message(), listener);
+            VideoAgentOutput exportOutput = exportOutputs.require(VideoAgentStep.EXPORT);
 
             AssetResponse asset = assetService.create(
                     run.projectId,
@@ -241,41 +294,18 @@ public class AgentRunService {
                     "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop"
             );
             TaskResponse completedTask = taskService.update(task.id(), "success", 100, "视频生成完成");
-            sleep(400);
             publish(runId, "asset.created", Map.of("asset", asset));
             publish(runId, "task.completed", Map.of("task", completedTask));
 
-            sleep(200);
             CanvasNodeResponse updatedVideoNode = canvasService.updateNode(run.canvasId, videoNode.id(), "success", Map.of(
                     "assetId", asset.id(),
                     "thumbnailUrl", asset.thumbnailUrl(),
                     "url", asset.url(),
                     "duration", "8s",
-                    "model", "Mock Video Provider"
+                    "model", "AgentScope Mock Video Provider"
             ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedVideoNode.id(),
-                    "status", updatedVideoNode.status(),
-                    "output", updatedVideoNode.output()
-            ));
+            publishNodeUpdated(run, updatedVideoNode);
 
-            sleep(250);
-            CanvasNodeResponse audioNode = updateNode(run, "audio-1", "running", Map.of(
-                    "sourceNodeId", storyboardNode.id(),
-                    "step", "audio"
-            ));
-            sleep(450);
-            CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", Map.of(
-                    "prompt", "空灵电子氛围、低频脉冲、轻微空间站机械声",
-                    "duration", "8s"
-            ));
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedAudioNode.id(),
-                    "status", updatedAudioNode.status(),
-                    "output", updatedAudioNode.output()
-            ));
-
-            sleep(300);
             CanvasNodeResponse finalNode = addNode(run,
                     run.canvasId,
                     "final",
@@ -284,25 +314,25 @@ public class AgentRunService {
                     new PositionResponse(1300, 500),
                     Map.of("sourceNodeId", videoNode.id(), "step", "compose")
             );
-            CanvasNodeResponse updatedFinalNode = canvasService.updateNode(run.canvasId, finalNode.id(), "success", Map.of(
-                    "assetId", asset.id(),
-                    "thumbnailUrl", asset.thumbnailUrl(),
-                    "url", asset.url(),
-                    "summary", "已把剧本、角色、分镜、关键帧、视频与音频合成为可预览成片。"
-            ));
+            Map<String, Object> finalOutput = new java.util.LinkedHashMap<>(exportOutput.output());
+            finalOutput.put("assetId", asset.id());
+            finalOutput.put("thumbnailUrl", asset.thumbnailUrl());
+            finalOutput.put("url", asset.url());
+            CanvasNodeResponse updatedFinalNode = canvasService.updateNode(run.canvasId, finalNode.id(), "success", finalOutput);
             addEdge(run, videoNode.id(), finalNode.id());
             addEdge(run, audioNode.id(), finalNode.id());
-            publish(runId, "node.updated", Map.of(
-                    "nodeId", updatedFinalNode.id(),
-                    "status", updatedFinalNode.status(),
-                    "output", updatedFinalNode.output()
-            ));
+            publishNodeUpdated(run, updatedFinalNode);
 
-            sleep(100);
             mark(run, "success", null);
             publish(runId, "run.completed", Map.of(
                     "runId", runId,
                     "status", "success"
+            ));
+        } catch (AgentRunCancelledException ex) {
+            mark(run, "cancelled", null);
+            publish(runId, "run.cancelled", Map.of(
+                    "runId", runId,
+                    "status", "cancelled"
             ));
         } catch (RuntimeException ex) {
             mark(run, "failed", ex.getMessage());
@@ -312,6 +342,116 @@ public class AgentRunService {
                     "error", ex.getMessage()
             ));
         }
+    }
+
+    private VideoAgentRuntime.VideoAgentRunListener listenerFor(MutableAgentRun run) {
+        return new VideoAgentRuntime.VideoAgentRunListener() {
+            @Override
+            public void onAgentActivated(AgentBase agent) {
+                synchronized (run.monitor) {
+                    run.activeAgents.add(agent);
+                }
+            }
+
+            @Override
+            public void onAgentReleased(AgentBase agent) {
+                synchronized (run.monitor) {
+                    run.activeAgents.remove(agent);
+                }
+            }
+
+            @Override
+            public void onStepStarted(VideoAgentStep step, String agentName) {
+                ensureCanContinue(run);
+                publish(run.runId, "agent.step.started", Map.of(
+                        "step", step.code(),
+                        "title", step.title(),
+                        "agentName", agentName
+                ));
+            }
+
+            @Override
+            public void onStepCompleted(VideoAgentStep step, String agentName, VideoAgentOutput output, GenerateReason reason) {
+                publish(run.runId, "agent.step.completed", Map.of(
+                        "step", step.code(),
+                        "title", step.title(),
+                        "agentName", agentName,
+                        "reason", reason.name(),
+                        "content", output == null ? "" : output.text(),
+                        "output", output == null ? Map.of() : output.output()
+                ));
+            }
+        };
+    }
+
+    private void waitForConfirmation(MutableAgentRun run, String checkpoint, String message) {
+        synchronized (run.monitor) {
+            if (run.cancelled) {
+                throw new AgentRunCancelledException();
+            }
+            run.checkpoint = checkpoint;
+            mark(run, "waiting_confirmation", null);
+            publish(run.runId, "agent.confirmation.required", Map.of(
+                    "runId", run.runId,
+                    "checkpoint", checkpoint,
+                    "message", message
+            ));
+            while (run.checkpoint != null && !run.cancelled) {
+                waitOnRun(run);
+            }
+            if (run.cancelled) {
+                throw new AgentRunCancelledException();
+            }
+            ensureCanContinue(run);
+        }
+    }
+
+    private void ensureCanContinue(MutableAgentRun run) {
+        synchronized (run.monitor) {
+            while (run.interrupted && !run.cancelled) {
+                waitOnRun(run);
+            }
+            if (run.cancelled) {
+                throw new AgentRunCancelledException();
+            }
+        }
+    }
+
+    private void waitOnRun(MutableAgentRun run) {
+        try {
+            run.monitor.wait();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AgentRunCancelledException();
+        }
+    }
+
+    private void publishNodeUpdated(MutableAgentRun run, CanvasNodeResponse node) {
+        publish(run.runId, "node.updated", Map.of(
+                "nodeId", node.id(),
+                "status", node.status(),
+                "output", node.output()
+        ));
+    }
+
+    private MutableAgentRun requireRun(String runId) {
+        MutableAgentRun run = runs.get(runId);
+        if (run == null) {
+            throw new IllegalArgumentException("agent run not found: " + runId);
+        }
+        return run;
+    }
+
+    private String commentOf(AgentRunControlRequest request) {
+        return request == null || request.comment() == null ? "" : request.comment();
+    }
+
+    private Msg userInterruptMessage(String comment) {
+        return Msg.builder()
+                .name("用户")
+                .role(MsgRole.USER)
+                .textContent(comment == null || comment.isBlank() ? "请暂停当前生成流程。" : comment)
+                .build();
     }
 
     private void executeNodeRegeneration(MutableAgentRun run, AgentRunRequest request) {
@@ -487,8 +627,17 @@ public class AgentRunService {
         private final String agentName;
         private final String message;
         private final Instant createdAt;
+        private final Object monitor = new Object();
+        private final Set<AgentBase> activeAgents = new HashSet<>();
         private String status;
         private String error;
+        private String checkpoint;
+        private String confirmationComment;
+        private String interruptComment;
+        private String resumeComment;
+        private String cancelComment;
+        private boolean interrupted;
+        private boolean cancelled;
         private Instant updatedAt;
 
         private MutableAgentRun(
@@ -525,11 +674,15 @@ public class AgentRunService {
                     agentName,
                     message,
                     error,
+                    checkpoint,
                     "/api/agent/runs/" + runId + "/events",
                     events,
                     createdAt,
                     updatedAt
             );
         }
+    }
+
+    private static final class AgentRunCancelledException extends RuntimeException {
     }
 }

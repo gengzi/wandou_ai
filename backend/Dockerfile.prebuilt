@@ -1,4 +1,4 @@
-ARG JRE_IMAGE=eclipse-temurin:17-jre-alpine
+ARG JRE_IMAGE=eclipse-temurin:17-jre
 
 FROM ${JRE_IMAGE}
 WORKDIR /app

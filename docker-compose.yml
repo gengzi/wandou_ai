@@ -21,7 +21,7 @@ services:
       context: ./backend
       args:
         MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17}
-        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre-alpine}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre}
     container_name: wandou-ai-backend
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-wandou_ai}
@@ -44,9 +44,10 @@ services:
       context: .
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
-        VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8080}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     container_name: wandou-ai-web
     environment:
+      BACKEND_URL: http://backend:8080
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       APP_URL: http://localhost:${WEB_PORT:-3001}
     ports:

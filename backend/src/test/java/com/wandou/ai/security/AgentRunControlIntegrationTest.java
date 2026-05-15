@@ -1,0 +1,171 @@
+package com.wandou.ai.security;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class AgentRunControlIntegrationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Test
+    void agentScopeRunWaitsForConfirmationsAndCompletes() throws Exception {
+        String token = login();
+        JsonNode project = createProject(token);
+
+        String runId = startRun(token, project.path("id").asText(), project.path("canvasId").asText(), project.path("conversationId").asText());
+
+        JsonNode firstCheckpoint = awaitStatus(token, runId, "waiting_confirmation");
+        assertThat(firstCheckpoint.path("checkpoint").asText()).isEqualTo("script");
+        assertEvent(firstCheckpoint, "agent.step.completed");
+        assertEvent(firstCheckpoint, "agent.confirmation.required");
+
+        confirm(token, runId, "剧本可以，继续。");
+        JsonNode secondCheckpoint = awaitStatus(token, runId, "waiting_confirmation");
+        assertThat(secondCheckpoint.path("checkpoint").asText()).isEqualTo("storyboard");
+
+        confirm(token, runId, "角色和分镜通过。");
+        JsonNode finalCheckpoint = awaitStatus(token, runId, "waiting_confirmation");
+        assertThat(finalCheckpoint.path("checkpoint").asText()).isEqualTo("final-review");
+
+        confirm(token, runId, "生成成片。");
+        JsonNode completed = awaitStatus(token, runId, "success");
+        assertEvent(completed, "asset.created");
+        assertEvent(completed, "run.completed");
+    }
+
+    @Test
+    void agentScopeRunCanBeInterruptedAndCancelled() throws Exception {
+        String token = login();
+        JsonNode project = createProject(token);
+
+        String runId = startRun(token, project.path("id").asText(), project.path("canvasId").asText(), project.path("conversationId").asText());
+        awaitStatus(token, runId, "waiting_confirmation");
+
+        mockMvc.perform(post("/api/agent/runs/{runId}/interrupt", runId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"comment":"先暂停，我要调整方向"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("interrupted"));
+
+        JsonNode interrupted = awaitStatus(token, runId, "interrupted");
+        assertEvent(interrupted, "run.interrupted");
+
+        mockMvc.perform(post("/api/agent/runs/{runId}/cancel", runId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"comment":"本次不继续"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("cancelled"));
+
+        JsonNode cancelled = awaitStatus(token, runId, "cancelled");
+        assertEvent(cancelled, "run.cancelled");
+    }
+
+    private String login() throws Exception {
+        String response = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"admin@wandou.ai","password":"Wandou@123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        return objectMapper.readTree(response).path("data").path("tokenValue").asText();
+    }
+
+    private JsonNode createProject(String token) throws Exception {
+        String response = mockMvc.perform(post("/api/projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"AgentScope Control Test","description":"multi agent flow","aspectRatio":"16:9"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).path("data");
+    }
+
+    private String startRun(String token, String projectId, String canvasId, String conversationId) throws Exception {
+        String response = mockMvc.perform(post("/api/agent/runs")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectId":"%s",
+                                  "canvasId":"%s",
+                                  "conversationId":"%s",
+                                  "message":"生成一个太空站少女和机器伙伴的 8 秒视频",
+                                  "agentName":"导演"
+                                }
+                                """.formatted(projectId, canvasId, conversationId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).path("data").path("runId").asText();
+    }
+
+    private void confirm(String token, String runId, String comment) throws Exception {
+        mockMvc.perform(post("/api/agent/runs/{runId}/confirm", runId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"comment":"%s"}
+                                """.formatted(comment)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("running"));
+    }
+
+    private JsonNode awaitStatus(String token, String runId, String status) throws Exception {
+        JsonNode detail = null;
+        for (int i = 0; i < 40; i++) {
+            String response = mockMvc.perform(get("/api/agent/runs/{runId}", runId)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            detail = objectMapper.readTree(response).path("data");
+            if (status.equals(detail.path("status").asText())) {
+                return detail;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("run did not reach status " + status + ", last detail: " + detail);
+    }
+
+    private void assertEvent(JsonNode detail, String eventName) {
+        assertThat(detail.path("events").findValuesAsText("event")).contains(eventName);
+    }
+}

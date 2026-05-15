@@ -1,6 +1,8 @@
 package com.wandou.ai.agent;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.wandou.ai.agent.dto.AgentRunControlRequest;
+import com.wandou.ai.agent.dto.AgentRunControlResponse;
 import com.wandou.ai.agent.dto.AgentRunRequest;
 import com.wandou.ai.agent.dto.AgentRunResponse;
 import com.wandou.ai.agent.dto.AgentRunDetailResponse;
@@ -40,6 +42,42 @@ public class AgentRunController {
         return agentRunService.get(runId)
                 .map(ApiResponse::ok)
                 .orElseGet(() -> ApiResponse.fail("agent run not found"));
+    }
+
+    @PostMapping("/{runId}/confirm")
+    @SaCheckPermission("agent:run")
+    public ApiResponse<AgentRunControlResponse> confirm(
+            @PathVariable String runId,
+            @RequestBody(required = false) AgentRunControlRequest request
+    ) {
+        return ApiResponse.ok(agentRunService.confirm(runId, request));
+    }
+
+    @PostMapping("/{runId}/interrupt")
+    @SaCheckPermission("agent:run")
+    public ApiResponse<AgentRunControlResponse> interrupt(
+            @PathVariable String runId,
+            @RequestBody(required = false) AgentRunControlRequest request
+    ) {
+        return ApiResponse.ok(agentRunService.interrupt(runId, request));
+    }
+
+    @PostMapping("/{runId}/resume")
+    @SaCheckPermission("agent:run")
+    public ApiResponse<AgentRunControlResponse> resume(
+            @PathVariable String runId,
+            @RequestBody(required = false) AgentRunControlRequest request
+    ) {
+        return ApiResponse.ok(agentRunService.resume(runId, request));
+    }
+
+    @PostMapping("/{runId}/cancel")
+    @SaCheckPermission("agent:run")
+    public ApiResponse<AgentRunControlResponse> cancel(
+            @PathVariable String runId,
+            @RequestBody(required = false) AgentRunControlRequest request
+    ) {
+        return ApiResponse.ok(agentRunService.cancel(runId, request));
     }
 
     @GetMapping(value = "/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

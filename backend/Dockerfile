@@ -1,5 +1,5 @@
 ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-17
-ARG JRE_IMAGE=eclipse-temurin:17-jre-alpine
+ARG JRE_IMAGE=eclipse-temurin:17-jre
 
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /app
