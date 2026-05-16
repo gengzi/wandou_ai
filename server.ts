@@ -55,7 +55,14 @@ async function startServer() {
     const headers = new Headers();
 
     for (const [key, value] of Object.entries(req.headers)) {
-      if (!value || key.toLowerCase() === "host" || key.toLowerCase() === "content-length") {
+      const lowerKey = key.toLowerCase();
+      if (
+        !value ||
+        lowerKey === "host" ||
+        lowerKey === "content-length" ||
+        lowerKey === "origin" ||
+        lowerKey === "referer"
+      ) {
         continue;
       }
       headers.set(key, Array.isArray(value) ? value.join(",") : value);

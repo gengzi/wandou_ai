@@ -4,6 +4,7 @@ import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.asset.dto.AssetCreateRequest;
 import com.wandou.ai.asset.dto.AssetImportResponse;
 import com.wandou.ai.asset.dto.AssetPageResponse;
+import com.wandou.ai.asset.dto.AssetUpdateRequest;
 import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.storage.StoredObject;
 import com.wandou.ai.storage.StoredObjectMetadata;
@@ -22,6 +23,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -47,16 +49,17 @@ public class AssetService {
             String url,
             String thumbnailUrl
     ) {
-        String assetId = IdGenerator.id("asset_" + type + "_");
+        String safeType = safeAssetType(type);
+        String assetId = IdGenerator.id("asset_" + safeType + "_");
         AssetEntity asset = new AssetEntity(
                 assetId,
-                projectId,
-                canvasId,
-                nodeId,
-                type,
-                name,
-                url,
-                thumbnailUrl,
+                normalize(projectId),
+                normalize(canvasId),
+                normalize(nodeId),
+                safeType,
+                normalize(name),
+                normalize(url),
+                normalize(thumbnailUrl),
                 null,
                 null,
                 null,
@@ -91,7 +94,7 @@ public class AssetService {
                 normalize(canvasId),
                 normalize(nodeId),
                 "video",
-                name,
+                normalize(name),
                 contentUrl(assetId),
                 thumbnail == null ? "" : thumbnailUrl(assetId),
                 video.objectKey(),
@@ -116,7 +119,7 @@ public class AssetService {
             String contentType,
             String extension
     ) {
-        String safeType = normalize(type).isBlank() ? "asset" : normalize(type);
+        String safeType = safeAssetType(type);
         String assetId = IdGenerator.id("asset_" + safeType + "_");
         String safeExtension = extension == null || extension.isBlank() ? "bin" : extension.replaceAll("^\\.+", "");
         String prefix = "projects/" + normalize(projectId) + "/assets/" + assetId;
@@ -127,7 +130,7 @@ public class AssetService {
                 normalize(canvasId),
                 normalize(nodeId),
                 safeType,
-                name,
+                normalize(name),
                 contentUrl(assetId),
                 contentUrl(assetId),
                 object.objectKey(),
@@ -156,7 +159,7 @@ public class AssetService {
         String contentType = file.getContentType() == null || file.getContentType().isBlank()
                 ? "application/octet-stream"
                 : file.getContentType();
-        String safeType = normalize(type).isBlank() ? typeFromContentType(contentType) : normalize(type);
+        String safeType = normalize(type).isBlank() ? typeFromContentType(contentType) : safeAssetType(type);
         String originalName = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
                 ? safeType + "-asset"
                 : file.getOriginalFilename();
@@ -188,14 +191,15 @@ public class AssetService {
     }
 
     @Transactional(readOnly = true)
-    public AssetPageResponse page(String projectId, String type, String keyword, int page, int size) {
+    public AssetPageResponse page(String projectId, String type, String keyword, int page, int size, String sort) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 100));
+        Sort.Direction direction = "asc".equalsIgnoreCase(normalize(sort)) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Page<AssetEntity> result = assetRepository.search(
                 normalize(projectId),
                 normalize(type),
                 normalize(keyword),
-                PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+                PageRequest.of(safePage, safeSize, Sort.by(direction, "createdAt"))
         );
         return new AssetPageResponse(
                 result.getContent().stream().map(this::toResponse).toList(),
@@ -231,6 +235,35 @@ public class AssetService {
     @Transactional(readOnly = true)
     public Optional<AssetResponse> get(String assetId) {
         return assetRepository.findById(assetId).map(this::toResponse);
+    }
+
+    @Transactional
+    public Optional<AssetResponse> update(String assetId, AssetUpdateRequest request) {
+        return assetRepository.findById(assetId)
+                .map(asset -> {
+                    String thumbnailUrl = request.thumbnailUrl() == null || request.thumbnailUrl().isBlank()
+                            ? request.url()
+                            : request.thumbnailUrl();
+                    asset.updateDetails(
+                            normalize(request.projectId()),
+                            normalize(request.canvasId()),
+                            normalize(request.nodeId()),
+                            safeAssetType(request.type()),
+                            normalize(request.name()),
+                            normalize(request.url()),
+                            normalize(thumbnailUrl)
+                    );
+                    return toResponse(assetRepository.save(asset));
+                });
+    }
+
+    @Transactional
+    public boolean delete(String assetId) {
+        if (!assetRepository.existsById(assetId)) {
+            return false;
+        }
+        assetRepository.deleteById(assetId);
+        return true;
     }
 
     @Transactional(readOnly = true)
@@ -294,7 +327,16 @@ public class AssetService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value;
+        return value == null ? "" : value.trim();
+    }
+
+    private String safeAssetType(String type) {
+        String normalized = normalize(type)
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_-]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        return normalized.isBlank() ? "asset" : normalized;
     }
 
     private String typeFromContentType(String contentType) {

@@ -9,6 +9,16 @@
 - Backend features should keep controllers thin, put business behavior in services, persist durable state through Flyway-managed schemas and repositories, and expose stable DTOs instead of leaking persistence entities.
 - Prefer OpenAI-compatible provider shapes for model configuration and invocation where practical, so text, image, audio, and video providers can share base URL, API key, model name, and adapter concepts while still allowing provider-specific extensions.
 - Before adding code, check whether a current module already owns that responsibility. Extend the existing owner rather than creating parallel implementations.
+- Frontend product and workflow design should follow `docs/design-language.md`. When implementing canvas nodes, cards, panels, asset views, model controls, or Agent Run interactions, make sure visible UI capabilities are real backend-backed actions rather than decorative icons.
+
+## Product Design Language
+
+- Wandou AI should feel like a professional creative production workspace: dark by default, compact, visual, calm, and workflow-first.
+- The default language is Simplified Chinese. English can be supported through i18n, but do not introduce raw English labels in the default UI unless they are model/provider names or accepted industry terms.
+- The canvas is operational, not decorative. Nodes should reflect real backend state, durable assets, model calls, tasks, dependencies, and regeneration actions.
+- Generated/uploaded media should be stored as durable project assets/object-storage-backed URLs instead of relying on third-party temporary URLs.
+- User-provided or previously generated reference images, characters, scripts, and model selections should be reused downstream and shown for confirmation where appropriate.
+- For detailed design rules, see `docs/design-language.md`.
 
 ## Security and Authorization
 

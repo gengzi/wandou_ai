@@ -152,4 +152,14 @@ public class AssetEntity {
     public Instant createdAt() {
         return createdAt;
     }
+
+    public void updateDetails(String projectId, String canvasId, String nodeId, String type, String name, String url, String thumbnailUrl) {
+        this.projectId = projectId;
+        this.canvasId = canvasId;
+        this.nodeId = nodeId;
+        this.type = type;
+        this.name = name;
+        this.url = url;
+        this.thumbnailUrl = thumbnailUrl;
+    }
 }

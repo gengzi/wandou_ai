@@ -1,21 +1,123 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Filter, Upload, FileVideo, Image as ImageIcon, FileText, FileAudio, Folder, MoreVertical, X, Plus } from 'lucide-react';
-import { AssetPageResponse, AssetResponse, createAsset, getAsset, listAssets, listAssetsPage, listProjects, ProjectResponse, uploadAsset } from '../lib/api';
+import {
+  BadgePlus,
+  Box,
+  Clock3,
+  FileAudio,
+  FileText,
+  FileVideo,
+  Filter,
+  Folder,
+  Image as ImageIcon,
+  MoreVertical,
+  Plus,
+  Printer,
+  Search,
+  Shirt,
+  SortAsc,
+  SortDesc,
+  Sparkles,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  AssetPageResponse,
+  AssetResponse,
+  createAsset,
+  deleteAsset,
+  getAsset,
+  getAuthToken,
+  listAssets,
+  listAssetsPage,
+  listProjects,
+  ProjectResponse,
+  updateAsset,
+  uploadAsset,
+} from '../lib/api';
 
 const assetTabs = [
   { id: 'all', label: '全部' },
+  { id: 'character', label: '角色' },
+  { id: 'scene', label: '场景' },
   { id: 'image', label: '图片' },
   { id: 'video', label: '视频' },
   { id: 'audio', label: '音频' },
-  { id: 'model', label: '项目模型' },
+  { id: 'derivative', label: '衍生品' },
+  { id: 'model', label: '3D模型' },
+  { id: 'print', label: '打印文件' },
 ];
 
-const folderPalettes = [
-  { tab: '#8bd9ad', back: 'rgba(222, 248, 236, 0.82)', front: 'rgba(149, 226, 184, 0.52)', lip: 'rgba(122, 211, 165, 0.40)', glow: 'rgba(78, 187, 132, 0.18)', text: '#ffffff' },
-  { tab: '#89cff5', back: 'rgba(227, 247, 255, 0.86)', front: 'rgba(170, 225, 248, 0.48)', lip: 'rgba(121, 202, 239, 0.36)', glow: 'rgba(87, 184, 228, 0.16)', text: '#ffffff' },
-  { tab: '#8d75ff', back: 'rgba(235, 229, 255, 0.84)', front: 'rgba(148, 118, 229, 0.60)', lip: 'rgba(130, 104, 214, 0.42)', glow: 'rgba(120, 90, 220, 0.22)', text: '#ffffff' },
-  { tab: '#92bcff', back: 'rgba(238, 246, 255, 0.86)', front: 'rgba(239, 246, 255, 0.58)', lip: 'rgba(219, 234, 254, 0.52)', glow: 'rgba(95, 150, 220, 0.15)', text: '#ffffff' },
+const creationCards = [
+  {
+    type: 'character',
+    title: '创建新角色',
+    description: '沉淀角色设定、三视图、表情、动作姿态，后续视频和衍生品都能复用。',
+    icon: Sparkles,
+  },
+  {
+    type: 'scene',
+    title: '创建新场景',
+    description: '保存环境概念图、道具、空间风格，用作分镜和故事短片的视觉资产。',
+    icon: ImageIcon,
+  },
+  {
+    type: 'derivative',
+    title: '创建衍生品',
+    description: '基于角色生成短袖印花、贴纸、海报、徽章等可售卖素材。',
+    icon: Shirt,
+  },
+  {
+    type: 'model',
+    title: '创建3D模型',
+    description: '登记角色模型、手办模型或 GLB/OBJ/STL 文件，支持后续打印导出。',
+    icon: Box,
+  },
 ];
+
+const typeLabels: Record<string, string> = {
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  character: '角色',
+  scene: '场景',
+  derivative: '衍生品',
+  model: '3D模型',
+  print: '打印文件',
+  file: '文件',
+  asset: '素材',
+};
+
+const typeLabel = (type: string) => typeLabels[type] || type || '素材';
+
+const assetTypeFromFile = (file: File) => {
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith('.stl') || lowerName.endsWith('.3mf') || lowerName.endsWith('.gcode')) {
+    return 'print';
+  }
+  if (lowerName.endsWith('.glb') || lowerName.endsWith('.gltf') || lowerName.endsWith('.obj') || lowerName.endsWith('.fbx')) {
+    return 'model';
+  }
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  if (file.type.startsWith('audio/')) return 'audio';
+  return 'asset';
+};
+
+const folderPalettes = [
+  { tab: '#5ac98e', back: 'rgba(16, 185, 129, 0.12)', front: 'rgba(16, 185, 129, 0.18)', lip: 'rgba(16, 185, 129, 0.24)', glow: 'rgba(16, 185, 129, 0.20)', text: '#d1fae5' },
+  { tab: '#60a5fa', back: 'rgba(96, 165, 250, 0.12)', front: 'rgba(96, 165, 250, 0.18)', lip: 'rgba(96, 165, 250, 0.24)', glow: 'rgba(96, 165, 250, 0.18)', text: '#dbeafe' },
+  { tab: '#a78bfa', back: 'rgba(167, 139, 250, 0.12)', front: 'rgba(167, 139, 250, 0.18)', lip: 'rgba(167, 139, 250, 0.24)', glow: 'rgba(167, 139, 250, 0.18)', text: '#ede9fe' },
+  { tab: '#38bdf8', back: 'rgba(56, 189, 248, 0.12)', front: 'rgba(56, 189, 248, 0.18)', lip: 'rgba(56, 189, 248, 0.24)', glow: 'rgba(56, 189, 248, 0.16)', text: '#e0f2fe' },
+];
+
+const withAssetAuthQuery = (url: string) => {
+  if (!url || !url.startsWith('/api/')) return url;
+  const token = getAuthToken();
+  if (!token) return url;
+  const nextUrl = new URL(url, window.location.origin);
+  nextUrl.searchParams.set('Authorization', `Bearer ${token}`);
+  return nextUrl.pathname + nextUrl.search;
+};
 
 interface ProjectFolderCardProps {
   title: string;
@@ -37,52 +139,58 @@ const ProjectFolderCard: React.FC<ProjectFolderCardProps> = ({
   return (
     <button
       onClick={onClick}
-      className={`group flex w-[292px] shrink-0 flex-col items-center text-center transition-all duration-300 ${active ? 'scale-[1.02]' : 'hover:-translate-y-1'}`}
+      className={`group flex w-[180px] shrink-0 flex-col items-center text-center transition-all duration-300 ${active ? 'scale-[1.02]' : 'hover:-translate-y-1'}`}
     >
-      <div className="relative h-[178px] w-[292px]">
+      <div className="relative h-[202px] w-[180px]">
         <div
-          className="absolute left-[42px] top-[14px] h-[118px] w-[198px] rounded-[16px] border backdrop-blur-xl"
+          className="absolute left-[30px] top-[44px] h-[96px] w-[120px] rounded-[14px] border backdrop-blur-xl"
           style={{
             borderColor: palette.tab,
             background: palette.back,
-            boxShadow: `0 16px 44px ${palette.glow}, inset 0 1px 0 rgba(255,255,255,0.76)`,
+            boxShadow: `0 16px 44px ${palette.glow}, inset 0 1px 0 rgba(255,255,255,0.10)`,
           }}
         />
         <div
-          className="absolute left-[126px] top-[14px] h-[26px] w-[82px] rounded-t-[16px] border border-b-0 backdrop-blur-xl"
+          className="absolute left-[70px] top-[36px] h-[24px] w-[64px] rounded-t-[14px] border border-b-0 backdrop-blur-xl"
           style={{ borderColor: palette.tab, background: palette.back }}
         />
-        <div className="absolute left-[72px] top-[56px] h-[78px] w-[154px] rounded-[14px] bg-white/75 shadow-[0_10px_22px_rgba(31,41,55,0.12)]" />
-        <div className="absolute left-[50px] top-[44px] h-[90px] w-[194px] rounded-[16px] bg-white/48 shadow-[0_10px_26px_rgba(31,41,55,0.10)]" />
-        {previews.slice(0, 2).length > 0 && (
-          <div className="absolute left-[166px] top-[38px] h-[74px] w-[102px] overflow-hidden rounded-[14px] border border-white/65 bg-white/55 shadow-[0_14px_26px_rgba(15,23,42,0.16)]">
-            {previews.slice(0, 2).map((preview, index) => (
-              <img
+        <div className="absolute left-[42px] top-[60px] h-[82px] w-[96px] rounded-[12px] bg-black/30 shadow-[0_10px_22px_rgba(0,0,0,0.22)]" />
+        <div className="absolute left-[54px] top-[70px] h-[82px] w-[96px] rounded-[12px] bg-white/[0.06] shadow-[0_10px_26px_rgba(0,0,0,0.18)]" />
+        {previews.slice(0, 3).length > 0 && (
+          <div className="absolute left-[42px] top-[56px] h-[86px] w-[96px]">
+            {previews.slice(0, 3).map((preview, index) => (
+              <div
                 key={`${title}-${preview}-${index}`}
-                src={preview}
+                className={`wandou-folder-preview absolute h-[86px] w-[86px] overflow-hidden rounded-[8px] border border-white/10 bg-black/30 shadow-[-2px_3px_8px_rgba(0,0,0,0.28)] ${
+                  index === 0 ? 'left-0 top-0 rotate-[-7deg]' : index === 1 ? 'left-[32px] top-[8px] rotate-[5deg]' : 'left-[16px] top-[18px]'
+                }`}
+              >
+              <img
+                src={withAssetAuthQuery(preview)}
                 alt=""
                 onError={(event) => {
                   event.currentTarget.style.display = 'none';
                 }}
-                className={`absolute inset-0 h-full w-full object-cover ${index === 0 ? '' : 'translate-y-9 scale-125 blur-[2px] opacity-70'}`}
+                className="h-full w-full object-cover"
               />
+              </div>
             ))}
-            <div className="absolute inset-0 bg-white/18" />
           </div>
         )}
         <div
-          className={`absolute left-[24px] top-[82px] h-[96px] w-[244px] overflow-hidden rounded-[17px] border border-white/48 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/80' : ''}`}
-          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.72), 0 24px 44px ${palette.glow}` }}
+          className={`absolute left-[14px] top-[104px] h-[70px] w-[152px] overflow-hidden rounded-[18px] border border-white/48 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-slate-950/10' : ''}`}
+          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.10), 0 24px 44px ${palette.glow}` }}
         >
-          <div className="absolute inset-x-0 top-0 h-[30px]" style={{ background: palette.lip }} />
-          <div className="absolute bottom-7 left-7 text-[20px] font-black tracking-[-0.01em] drop-shadow-sm" style={{ color: palette.text }}>D.Design</div>
+          <div className="absolute inset-x-0 top-0 h-[24px]" style={{ background: palette.lip }} />
+          <div className="absolute inset-x-0 bottom-5 text-center text-[18px] font-black tracking-[-0.01em] drop-shadow-sm" style={{ color: palette.text }}>Wandou</div>
+          <div className="absolute inset-x-0 bottom-2 text-center text-[10px] font-semibold tracking-[0.18em] text-white/70">素材库</div>
         </div>
       </div>
-      <div className="mt-5 flex min-w-0 items-center justify-center gap-2">
-        <span className="shrink-0 rounded-md bg-slate-200/80 px-2.5 py-1 text-sm font-semibold text-slate-500">默认</span>
-        <span className="min-w-0 max-w-[188px] truncate text-base font-bold text-slate-950">{title}</span>
+      <div className="-mt-3 flex min-w-0 items-center justify-center gap-1.5">
+        <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[11px] font-medium text-slate-400">默认</span>
+        <span className="min-w-0 max-w-[118px] truncate text-[13px] font-semibold text-slate-100">{title}</span>
       </div>
-      <div className="mt-3 text-base text-slate-500">{count}个素材</div>
+      <div className="mt-2 text-xs text-slate-500">{count}个素材</div>
     </button>
   );
 };
@@ -91,21 +199,21 @@ function NewProjectFolderCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group flex w-[292px] shrink-0 flex-col items-center text-center transition-all duration-300 hover:-translate-y-1"
+      className="group flex w-[180px] shrink-0 flex-col items-center text-center transition-all duration-300 hover:-translate-y-1"
     >
-      <div className="relative h-[178px] w-[292px]">
-        <div className="absolute left-[22px] top-2 h-[146px] w-[222px] rounded-[24px] bg-[#dfe8f3]" />
-        <div className="absolute left-[130px] top-[26px] h-[22px] w-[112px] rounded-t-[12px] bg-[#cbdcf0]" />
-        <div className="absolute left-0 top-[48px] h-[130px] w-[268px] rounded-[24px] bg-[#e7edf6] shadow-[0_20px_40px_rgba(125,143,165,0.18)]" />
-        <div className="absolute left-[38px] top-[72px] flex h-[96px] w-[198px] flex-col items-center justify-center rounded-[18px] bg-[#dce6f2] text-slate-400">
-          <Plus size={34} strokeWidth={1.8} />
-          <div className="mt-4 text-base font-semibold leading-8">
-            <div>点击新建或拖拽本地</div>
-            <div>文件夹到这里</div>
+      <div className="relative h-[202px] w-[180px]">
+        <div className="absolute left-[24px] top-[48px] h-[96px] w-[126px] rounded-[18px] bg-white/10" />
+        <div className="absolute left-[76px] top-[39px] h-[24px] w-[64px] rounded-t-[13px] bg-white/15" />
+        <div className="absolute left-[12px] top-[102px] h-[72px] w-[154px] rounded-[18px] bg-white/10 shadow-[0_20px_40px_rgba(0,0,0,0.22)]" />
+        <div className="absolute left-[30px] top-[74px] flex h-[90px] w-[120px] flex-col items-center justify-center rounded-[16px] bg-[#171719] text-slate-400">
+          <Plus size={28} strokeWidth={1.8} />
+          <div className="mt-3 text-xs font-semibold leading-5">
+            <div>新建或上传</div>
+            <div>项目素材</div>
           </div>
         </div>
       </div>
-      <div className="mt-5 text-base font-medium text-slate-500">新建项目素材</div>
+      <div className="-mt-3 text-[13px] font-medium text-slate-400">新建项目素材</div>
     </button>
   );
 }
@@ -118,6 +226,8 @@ export default function AssetsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeType, setActiveType] = useState('all');
   const [query, setQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'timeline'>('table');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [assetPage, setAssetPage] = useState<AssetPageResponse>({
@@ -131,7 +241,9 @@ export default function AssetsView() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetResponse | null>(null);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const foldersRef = useRef<HTMLElement>(null);
   const [form, setForm] = useState({
     projectId: '',
     canvasId: '',
@@ -158,7 +270,9 @@ export default function AssetsView() {
     const grouped = new Map<string, AssetResponse[]>();
     assets.forEach((asset) => {
       const key = asset.projectId || 'unassigned';
-      grouped.set(key, [...(grouped.get(key) || []), asset]);
+      const projectAssets = grouped.get(key) || [];
+      projectAssets.push(asset);
+      grouped.set(key, projectAssets);
     });
     return grouped;
   }, [assets]);
@@ -188,6 +302,7 @@ export default function AssetsView() {
       keyword: query.trim(),
       page: pageOverride,
       size: pageSize,
+      sort: sortDirection,
     })
       .then(setAssetPage)
       .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '分页素材加载失败'))
@@ -200,17 +315,11 @@ export default function AssetsView() {
 
   useEffect(() => {
     refreshPage();
-  }, [selectedProjectId, activeType, query, page, pageSize]);
+  }, [selectedProjectId, activeType, query, page, pageSize, sortDirection]);
 
   useEffect(() => {
     setPage(0);
-  }, [selectedProjectId, activeType, query, pageSize]);
-
-  const visibleAssets = assets.filter((asset) => {
-    if (selectedProjectId === 'unassigned') return !asset.projectId;
-    if (selectedProjectId !== 'all') return asset.projectId === selectedProjectId;
-    return true;
-  });
+  }, [selectedProjectId, activeType, query, pageSize, sortDirection]);
 
   const filteredAssets = assetPage.content;
   const totalPages = Math.max(1, assetPage.totalPages || 1);
@@ -229,6 +338,52 @@ export default function AssetsView() {
       url: '',
       thumbnailUrl: '',
     });
+    setEditingAssetId(null);
+    setShowCreateForm(true);
+  };
+
+  const openCreateTypedAsset = (type: string, name = '') => {
+    const project = activeProject || projects[0] || null;
+    setForm({
+      projectId: project?.id || '',
+      canvasId: project?.canvasId || '',
+      nodeId: '',
+      type,
+      name,
+      url: '',
+      thumbnailUrl: '',
+    });
+    setEditingAssetId(null);
+    setShowCreateForm(true);
+  };
+
+  const openEditAssetForm = (asset: AssetResponse) => {
+    setForm({
+      projectId: asset.projectId || '',
+      canvasId: asset.canvasId || '',
+      nodeId: asset.nodeId || '',
+      type: asset.type || 'image',
+      name: asset.name || '',
+      url: asset.url || '',
+      thumbnailUrl: asset.thumbnailUrl || '',
+    });
+    setEditingAssetId(asset.id);
+    setShowCreateForm(true);
+  };
+
+  const openDerivativeForm = (type: string, label: string) => {
+    if (!selectedAsset) return;
+    setForm({
+      projectId: selectedAsset.projectId || activeProject?.id || projects[0]?.id || '',
+      canvasId: selectedAsset.canvasId || activeProject?.canvasId || projects[0]?.canvasId || '',
+      nodeId: selectedAsset.nodeId || '',
+      type,
+      name: `${selectedAsset.name} - ${label}`,
+      url: selectedAsset.url,
+      thumbnailUrl: selectedAsset.thumbnailUrl || selectedAsset.url,
+    });
+    setSelectedAsset(null);
+    setEditingAssetId(null);
     setShowCreateForm(true);
   };
 
@@ -254,7 +409,7 @@ export default function AssetsView() {
     setSaving(true);
     setError(null);
     try {
-      const asset = await createAsset({
+      const payload = {
         projectId: form.projectId.trim(),
         canvasId: form.canvasId.trim() || projectById.get(form.projectId.trim())?.canvasId,
         nodeId: form.nodeId.trim() || undefined,
@@ -262,15 +417,37 @@ export default function AssetsView() {
         name: form.name.trim(),
         url: form.url.trim(),
         thumbnailUrl: form.thumbnailUrl.trim() || undefined,
-      });
+      };
+      const asset = editingAssetId
+        ? await updateAsset(editingAssetId, payload)
+        : await createAsset(payload);
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
       setSelectedProjectId(asset.projectId || form.projectId);
       setPage(0);
       refreshPage(0, asset.projectId || form.projectId);
       setShowCreateForm(false);
-      setNotice('素材已登记到项目资产库。');
+      setEditingAssetId(null);
+      setSelectedAsset(asset);
+      setNotice(editingAssetId ? '素材信息已更新。' : '素材已登记到项目资产库。');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '素材登记失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAsset = async (asset: AssetResponse) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await deleteAsset(asset.id);
+      setAssets((current) => current.filter((item) => item.id !== asset.id));
+      setSelectedAsset(null);
+      setPage(0);
+      refreshPage(0, selectedProjectId);
+      setNotice('素材已删除。');
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '素材删除失败');
     } finally {
       setSaving(false);
     }
@@ -285,13 +462,7 @@ export default function AssetsView() {
       return;
     }
     const project = projectById.get(form.projectId.trim());
-    const type = file.type.startsWith('image/')
-      ? 'image'
-      : file.type.startsWith('video/')
-        ? 'video'
-        : file.type.startsWith('audio/')
-          ? 'audio'
-          : 'asset';
+    const type = assetTypeFromFile(file);
     setSaving(true);
     setError(null);
     try {
@@ -331,6 +502,11 @@ export default function AssetsView() {
       case 'video': return <FileVideo className="text-brand" size={24} />;
       case 'image': return <ImageIcon className="text-purple-400" size={24} />;
       case 'audio': return <FileAudio className="text-yellow-400" size={24} />;
+      case 'character': return <Sparkles className="text-pink-400" size={24} />;
+      case 'scene': return <ImageIcon className="text-cyan-400" size={24} />;
+      case 'derivative': return <Shirt className="text-lime-300" size={24} />;
+      case 'model': return <Box className="text-orange-300" size={24} />;
+      case 'print': return <Printer className="text-emerald-300" size={24} />;
       default: return <FileText className="text-slate-400" size={24} />;
     }
   };
@@ -344,29 +520,55 @@ export default function AssetsView() {
       .slice(0, 2);
   };
 
+  const selectedAssetUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.url) : '';
+  const selectedAssetThumbnailUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.thumbnailUrl || selectedAsset.url) : '';
+
   return (
-    <div className="h-full overflow-y-auto bg-[#f6f8fc] text-slate-700">
+    <div className="h-full overflow-y-auto bg-bg-dark text-slate-300">
       <main className="flex min-h-full min-w-0 flex-col p-8">
         <header className="mb-6 flex items-center justify-between">
           <div className="min-w-0">
             <div className="text-xs font-semibold tracking-wide text-brand">项目素材</div>
-            <h1 className="mt-1 truncate text-2xl font-bold text-slate-950">素材管理</h1>
-            <p className="mt-1 text-sm text-slate-500">项目文件夹、媒体资源和生成资产统一归档</p>
+            <h1 className="mt-1 truncate text-xl font-bold text-white">素材管理</h1>
+            <p className="mt-1 text-xs text-slate-500">项目文件夹、媒体资源和生成资产统一归档</p>
           </div>
           <div className="flex space-x-3">
-            <button onClick={() => setNotice('项目内文件夹/标签会在资产目录模型接入后启用；当前先按项目、类型和搜索管理。')} className="flex items-center space-x-2 rounded-lg border border-slate-200 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-white">
+            <button onClick={() => foldersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="flex items-center space-x-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white">
               <Folder size={16} />
               <span>项目文件夹</span>
             </button>
-            <button onClick={openCreateForm} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
-              <Upload size={16} />
-              <span>登记素材</span>
+            <button onClick={() => openCreateTypedAsset('character')} className="px-3 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-xs font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
+              <BadgePlus size={16} />
+              <span>创建资产</span>
             </button>
           </div>
         </header>
 
-        <section className="mb-10 overflow-hidden bg-[#f6f8fc] px-2 py-5">
-          <div className="flex items-start gap-16 overflow-x-auto pb-6">
+        <section className="mb-8 grid gap-3 lg:grid-cols-4">
+          {creationCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.type}
+                onClick={() => openCreateTypedAsset(card.type)}
+                className="group rounded-2xl border border-white/10 bg-[#111112] p-4 text-left shadow-[0_18px_60px_rgba(0,0,0,0.18)] transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:bg-[#171719]"
+              >
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-brand group-hover:bg-brand group-hover:text-white">
+                  <Icon size={18} />
+                </div>
+                <div className="text-sm font-bold text-white">{card.title}</div>
+                <p className="mt-2 text-[11px] leading-5 text-slate-500">{card.description}</p>
+              </button>
+            );
+          })}
+        </section>
+
+        <section ref={foldersRef} className="wandou-scroll-fade mb-8 overflow-hidden bg-bg-dark px-2 py-3">
+          <div className="mb-1 flex items-center justify-between px-1">
+            <h2 className="text-sm font-semibold text-white">项目文件夹</h2>
+            <span className="text-xs text-slate-500">按项目聚合素材，横向滚动查看</span>
+          </div>
+          <div className="flex items-start gap-8 overflow-x-auto pb-6">
             <NewProjectFolderCard onClick={openCreateForm} />
 
             <ProjectFolderCard
@@ -404,60 +606,126 @@ export default function AssetsView() {
         </section>
 
         <div className="mb-4 min-w-0">
-          <h2 className="truncate text-xl font-bold text-slate-950">
+          <h2 className="truncate text-lg font-bold text-white">
             {selectedProjectId === 'all' ? '全部项目素材' : selectedProjectId === 'unassigned' ? '未归档素材' : projectLabel(selectedProjectId)}
           </h2>
-          <div className="mt-1 text-sm text-slate-500">{assetPage.totalElements} 个素材</div>
+          <div className="mt-1 text-xs text-slate-500">{assetPage.totalElements} 个素材</div>
         </div>
 
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex rounded-lg border border-slate-200 bg-white/80 p-1 shadow-sm">
+        <div className="sticky top-0 z-20 mb-6 flex items-center justify-between gap-4 border-y border-white/10 bg-bg-dark/95 py-3 backdrop-blur">
+          <div className="flex rounded-lg border border-white/10 bg-white/5 p-1">
             {assetTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveType(tab.id)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${activeType === tab.id ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${activeType === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-white'}`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
           <div className="flex space-x-3">
+            <button onClick={() => setViewMode((mode) => mode === 'timeline' ? 'table' : 'timeline')} className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${
+              viewMode === 'timeline'
+                ? 'border-brand/40 bg-brand/15 text-brand'
+                : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}>
+              <Clock3 size={16} />
+              {viewMode === 'timeline' ? '列表视图' : '时间轴'}
+            </button>
+            <button
+              onClick={() => setSortDirection((direction) => direction === 'desc' ? 'asc' : 'desc')}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              {sortDirection === 'desc' ? <SortDesc size={16} /> : <SortAsc size={16} />}
+              {sortDirection === 'desc' ? '新到旧' : '旧到新'}
+            </button>
             <div className="relative group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand transition-colors" size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="w-72 rounded-lg border border-slate-200 bg-white/85 py-2 pl-9 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-brand/50" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="h-8 w-64 rounded-lg border border-white/10 bg-[#1A1A1C] py-1.5 pl-9 pr-4 text-xs text-slate-200 outline-none transition-all placeholder:text-slate-500 focus:border-brand/50" />
             </div>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand/50"
+              className="h-8 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-brand/50"
             >
               <option value={10}>10 / 页</option>
               <option value={20}>20 / 页</option>
               <option value={50}>50 / 页</option>
             </select>
-            <button onClick={() => setNotice('高级筛选会和项目标签、节点来源一起接入；当前支持项目、类型和搜索。')} className="rounded-lg border border-slate-200 bg-white/85 p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-900">
+            <button onClick={() => setNotice('高级筛选会和项目标签、节点来源一起接入；当前支持项目、类型和搜索。')} className="rounded-lg border border-white/10 bg-white/5 p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
               <Filter size={18} />
             </button>
           </div>
         </div>
 
         {notice && (
-          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand/25 bg-brand/10 px-4 py-3 text-sm text-brand">
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand/25 bg-brand/10 px-4 py-3 text-xs text-brand">
             <span>{notice}</span>
             <button onClick={() => setNotice(null)} className="text-xs font-semibold text-brand hover:text-emerald-700">关闭</button>
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm">
+        {viewMode === 'timeline' ? (
+          <div className="flex-1 rounded-2xl border border-white/10 bg-[#111112] p-5 shadow-2xl">
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+            {loadingPage ? (
+              <div className="py-16 text-center text-sm text-slate-500">正在加载素材...</div>
+            ) : filteredAssets.length > 0 ? (
+              <div className="relative space-y-4 before:absolute before:left-5 before:top-3 before:h-[calc(100%-24px)] before:w-px before:bg-white/10">
+                {filteredAssets.map((asset) => {
+                  const preview = withAssetAuthQuery(asset.thumbnailUrl || asset.url);
+                  return (
+                    <button
+                      key={asset.id}
+                      onClick={() => openAsset(asset.id)}
+                      className="relative grid w-full grid-cols-[40px_96px_minmax(0,1fr)_auto] items-center gap-4 rounded-xl border border-white/5 bg-white/[0.025] p-3 text-left transition-colors hover:border-brand/30 hover:bg-white/[0.05]"
+                    >
+                      <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#171719]">
+                        {getIcon(asset.type)}
+                      </div>
+                      <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                        {preview ? (
+                          asset.type === 'video' ? (
+                            <video src={withAssetAuthQuery(asset.url)} poster={preview} className="h-full w-full object-cover" />
+                          ) : (
+                            <img src={preview} alt={asset.name} className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                          )
+                        ) : null}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-slate-100">{asset.name}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                          <span>{typeLabel(asset.type)}</span>
+                          <span>{projectLabel(asset.projectId)}</span>
+                          {asset.nodeId && <span className="max-w-[180px] truncate">节点 {asset.nodeId}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] text-slate-500">{new Date(asset.createdAt).toLocaleString()}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-16 text-center text-sm text-slate-500">
+                当前条件暂无素材。
+              </div>
+            )}
+          </div>
+        ) : (
+        <div className="flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#111112] shadow-2xl">
           {error && (
-            <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
+            <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-3 text-sm text-red-300">
               {error}
             </div>
           )}
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 text-xs text-slate-500">
+              <tr className="border-b border-white/10 bg-white/[0.03] text-[11px] text-slate-500">
                 <th className="px-6 py-4 font-medium">名称</th>
                 <th className="px-6 py-4 font-medium">项目</th>
                 <th className="px-6 py-4 font-medium">来源节点</th>
@@ -473,19 +741,19 @@ export default function AssetsView() {
                   </td>
                 </tr>
               ) : filteredAssets.length > 0 ? filteredAssets.map((asset) => (
-                <tr key={asset.id} onClick={() => openAsset(asset.id)} className="group cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50">
+                <tr key={asset.id} onClick={() => openAsset(asset.id)} className="group cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04]">
                   <td className="px-6 py-4 flex items-center space-x-3">
                     {getIcon(asset.type)}
                     <div>
-                      <div className="text-sm font-medium text-slate-900 transition-colors group-hover:text-brand">{asset.name}</div>
-                      <div className="text-xs text-slate-500">{asset.type}</div>
+                      <div className="text-xs font-medium text-slate-200 transition-colors group-hover:text-brand">{asset.name}</div>
+                      <div className="text-xs text-slate-500">{typeLabel(asset.type)}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{projectLabel(asset.projectId)}</td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{asset.nodeId || '--'}</td>
-                  <td className="px-6 py-4 text-sm text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{projectLabel(asset.projectId)}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{asset.nodeId || '--'}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
                   <td className="px-6 py-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(event) => { event.stopPropagation(); setNotice('素材重命名/删除需要后端资产管理接口。'); }} className="p-1 hover:bg-white/10 rounded text-slate-400">
+                    <button onClick={(event) => { event.stopPropagation(); openEditAssetForm(asset); }} className="p-1 hover:bg-white/10 rounded text-slate-400">
                       <MoreVertical size={16} />
                     </button>
                   </td>
@@ -499,7 +767,7 @@ export default function AssetsView() {
               )}
             </tbody>
           </table>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 text-xs text-slate-500">
             <div>
               {assetPage.totalElements > 0
                 ? `显示 ${pageStart}-${pageEnd} / ${assetPage.totalElements}`
@@ -509,14 +777,14 @@ export default function AssetsView() {
               <button
                 onClick={() => setPage(0)}
                 disabled={currentPage === 0 || loadingPage}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 首页
               </button>
               <button
                 onClick={() => setPage((value) => Math.max(0, value - 1))}
                 disabled={currentPage === 0 || loadingPage}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 上一页
               </button>
@@ -526,30 +794,31 @@ export default function AssetsView() {
               <button
                 onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
                 disabled={currentPage >= totalPages - 1 || loadingPage}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 下一页
               </button>
               <button
                 onClick={() => setPage(totalPages - 1)}
                 disabled={currentPage >= totalPages - 1 || loadingPage}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 末页
               </button>
             </div>
           </div>
         </div>
+        )}
 
         {showCreateForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 py-8 backdrop-blur-sm">
             <form onSubmit={handleCreateAsset} className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#121213] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
               <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-bold text-white">登记项目素材</h2>
-                  <p className="mt-1 text-xs text-slate-500">上传文件或登记外链，素材会归档到所选项目。</p>
+                  <h2 className="text-sm font-bold text-white">{editingAssetId ? '编辑项目素材' : '登记项目素材'}</h2>
+                  <p className="mt-1 text-xs text-slate-500">{editingAssetId ? '更新素材名称、类型和访问地址。' : '上传文件或登记外链，素材会归档到所选项目。'}</p>
                 </div>
-                <button type="button" onClick={() => setShowCreateForm(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="关闭登记素材">
+                <button type="button" onClick={() => { setShowCreateForm(false); setEditingAssetId(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="关闭登记素材">
                   <X size={16} />
                 </button>
               </div>
@@ -559,7 +828,11 @@ export default function AssetsView() {
                   <option value="image">图片</option>
                   <option value="video">视频</option>
                   <option value="audio">音频</option>
-                  <option value="model">模型</option>
+                  <option value="character">角色</option>
+                  <option value="scene">场景</option>
+                  <option value="derivative">衍生品</option>
+                  <option value="model">3D模型</option>
+                  <option value="print">打印文件</option>
                   <option value="file">文件</option>
                 </select>
                 <select value={form.projectId} onChange={(event) => handleProjectChange(event.target.value)} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
@@ -568,21 +841,22 @@ export default function AssetsView() {
                     <option key={project.id} value={project.id}>{project.name}</option>
                   ))}
                 </select>
-                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving} className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">
+                  <Upload size={16} />
                   上传文件
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleUploadFile} />
+                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.3mf,.gcode,.zip" className="hidden" onChange={handleUploadFile} />
                 <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="素材 URL" />
                 <input value={form.thumbnailUrl} onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="缩略图 URL（可选）" />
                 <input value={form.canvasId} onChange={(event) => setForm({ ...form, canvasId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="画布 ID" />
                 <input value={form.nodeId} onChange={(event) => setForm({ ...form, nodeId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="节点 ID（可选）" />
               </div>
               <div className="flex justify-end gap-3 border-t border-white/5 px-5 py-4">
-                <button type="button" onClick={() => setShowCreateForm(false)} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                <button type="button" onClick={() => { setShowCreateForm(false); setEditingAssetId(null); }} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
                   取消
                 </button>
                 <button type="submit" disabled={saving} className="rounded-lg bg-brand px-5 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">
-                  {saving ? '保存中...' : '保存到项目'}
+                  {saving ? '保存中...' : editingAssetId ? '保存修改' : '保存到项目'}
                 </button>
               </div>
             </form>
@@ -597,12 +871,19 @@ export default function AssetsView() {
             <button onClick={() => setSelectedAsset(null)} className="text-slate-500 hover:text-white"><X size={18} /></button>
           </div>
           <div className="space-y-4 text-sm">
-            {(selectedAsset.thumbnailUrl || selectedAsset.url) && (
+            {(selectedAssetThumbnailUrl || selectedAssetUrl) && (
               <div className="aspect-video overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 {selectedAsset.type === 'video' ? (
-                  <video src={selectedAsset.url} poster={selectedAsset.thumbnailUrl} controls className="h-full w-full object-cover" />
+                  <video src={selectedAssetUrl} poster={selectedAssetThumbnailUrl || undefined} controls className="h-full w-full object-cover" />
                 ) : (
-                  <img src={selectedAsset.thumbnailUrl || selectedAsset.url} className="h-full w-full object-cover" alt={selectedAsset.name} />
+                  <img
+                    src={selectedAssetThumbnailUrl || selectedAssetUrl}
+                    className="h-full w-full object-cover"
+                    alt={selectedAsset.name}
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none';
+                    }}
+                  />
                 )}
               </div>
             )}
@@ -616,7 +897,7 @@ export default function AssetsView() {
             </div>
             <div>
               <div className="text-xs text-slate-500">URL</div>
-              <a href={selectedAsset.url} target="_blank" rel="noreferrer" className="mt-1 block break-all text-brand hover:text-brand/80">{selectedAsset.url}</a>
+              <a href={selectedAssetUrl || selectedAsset.url} target="_blank" rel="noreferrer" className="mt-1 block break-all text-brand hover:text-brand/80">{selectedAsset.url}</a>
             </div>
             <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
               <div className="rounded-lg bg-black/20 p-3">
@@ -627,6 +908,52 @@ export default function AssetsView() {
                 <div className="text-slate-500">节点</div>
                 <div className="mt-1 break-all">{selectedAsset.nodeId || '--'}</div>
               </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="mb-3 text-xs font-bold text-slate-300">角色衍生</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => openDerivativeForm('derivative', '短袖印花')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                  短袖印花
+                </button>
+                <button onClick={() => openDerivativeForm('derivative', '贴纸套装')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                  贴纸套装
+                </button>
+                <button onClick={() => openDerivativeForm('model', '3D模型')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                  3D模型
+                </button>
+                <button onClick={() => openDerivativeForm('print', '打印文件')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                  打印文件
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => openEditAssetForm(selectedAsset)}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10"
+              >
+                编辑信息
+              </button>
+              <button
+                onClick={() => handleDeleteAsset(selectedAsset)}
+                disabled={saving}
+                className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                删除素材
+              </button>
+              <button
+                onClick={() => selectedAssetUrl && window.open(selectedAssetUrl, '_blank', 'noopener,noreferrer')}
+                disabled={!selectedAssetUrl}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                打开原文件
+              </button>
+              <button
+                onClick={() => selectedAssetUrl && window.open(selectedAssetUrl, '_blank', 'noopener,noreferrer')}
+                disabled={!selectedAssetUrl || !['print', 'model', 'file'].includes(selectedAsset.type)}
+                className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                导出打印
+              </button>
             </div>
           </div>
         </div>

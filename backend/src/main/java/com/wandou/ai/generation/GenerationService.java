@@ -56,6 +56,7 @@ public class GenerationService {
                         "对话助手",
                         "你是 Wandou AI 工作台里的创作助手。自然回答用户，不要启动视频工作流，回答要简洁。",
                         request.prompt(),
+                        request.modelConfigId(),
                         usageContext(request, null, "direct.chat")
                 )
                 .orElseThrow(() -> new IllegalStateException("未配置可用的真实文本模型，请先在模型配置里启用 text 模型。"));
@@ -79,7 +80,7 @@ public class GenerationService {
         addUserMessage(request);
         CanvasNodeResponse node = addNode(request, "images", "图片生成", 940, 120);
         try {
-            ImageGenerationService.ImageResult image = imageGenerationService.generate(userId, request.prompt(), usageContext(request, node.id(), "direct.image"));
+            ImageGenerationService.ImageResult image = imageGenerationService.generate(userId, request.prompt(), request.modelConfigId(), usageContext(request, node.id(), "direct.image"));
             AssetResponse asset = image.url().isBlank()
                     ? assetService.createStoredAsset(request.projectId(), request.canvasId(), node.id(), "image", "生成图片", image.bytes(), image.contentType(), image.extension())
                     : assetService.create(request.projectId(), request.canvasId(), node.id(), "image", "生成图片", image.url(), image.url());
@@ -121,8 +122,13 @@ public class GenerationService {
                     node.id(),
                     request.prompt(),
                     request.prompt(),
-                    "8s",
-                    "configured-video"
+                    configuredDuration(request),
+                    "configured-video",
+                    request.modelConfigId(),
+                    configuredAspectRatio(request),
+                    configuredResolution(request),
+                    request.audioEnabled() == null || request.audioEnabled(),
+                    Boolean.TRUE.equals(request.multiCameraEnabled())
             ));
             VideoGenerationStatus status = waitForVideo(providerJobId);
             if (!"succeeded".equals(status.status())) {
@@ -146,6 +152,7 @@ public class GenerationService {
             output.put("providerJobId", providerJobId);
             output.put("providerStatus", status.status());
             output.put("modelSource", "video-provider");
+            output.put("parameters", generationSettingsOutput(request));
             CanvasNodeResponse updatedNode = canvasService.updateNode(request.canvasId(), node.id(), "success", output);
             String message = "视频已生成";
             addAssistantMessage(request, "视频生成", message);
@@ -203,6 +210,40 @@ public class GenerationService {
 
     private ModelUsageContext usageContext(GenerationRequest request, String nodeId, String endpoint) {
         return new ModelUsageContext("direct", request.projectId(), request.canvasId(), nodeId, endpoint);
+    }
+
+    private String configuredDuration(GenerationRequest request) {
+        Integer seconds = request.durationSeconds();
+        if (seconds == null || seconds < 1) {
+            return "5s";
+        }
+        return Math.max(1, Math.min(seconds, 30)) + "s";
+    }
+
+    private String configuredAspectRatio(GenerationRequest request) {
+        String value = request.aspectRatio();
+        if (value == null || value.isBlank()) {
+            return "16:9";
+        }
+        return switch (value.trim()) {
+            case "16:9", "4:3", "1:1", "3:4", "9:16" -> value.trim();
+            default -> "16:9";
+        };
+    }
+
+    private String configuredResolution(GenerationRequest request) {
+        String value = request.resolution();
+        return value != null && value.equalsIgnoreCase("1080p") ? "1080p" : "720p";
+    }
+
+    private Map<String, Object> generationSettingsOutput(GenerationRequest request) {
+        return Map.of(
+                "aspectRatio", configuredAspectRatio(request),
+                "resolution", configuredResolution(request),
+                "duration", configuredDuration(request),
+                "audioEnabled", request.audioEnabled() == null || request.audioEnabled(),
+                "multiCameraEnabled", Boolean.TRUE.equals(request.multiCameraEnabled())
+        );
     }
 
     private void addUserMessage(GenerationRequest request) {

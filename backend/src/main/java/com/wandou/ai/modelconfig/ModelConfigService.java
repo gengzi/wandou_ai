@@ -28,8 +28,18 @@ public class ModelConfigService {
 
     @Transactional(readOnly = true)
     public Optional<ModelConfigEntity> findEnabledConfig(String userId, String capability) {
+        return findEnabledConfig(userId, capability, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ModelConfigEntity> findEnabledConfig(String userId, String capability, String modelConfigId) {
         if (userId == null || userId.isBlank() || capability == null || capability.isBlank()) {
             return Optional.empty();
+        }
+        if (modelConfigId != null && !modelConfigId.isBlank()) {
+            return repository.findByIdAndUserId(modelConfigId.trim(), userId)
+                    .filter(ModelConfigEntity::enabled)
+                    .filter(config -> capability.equals(config.capability()));
         }
         return repository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc(userId, capability);
     }

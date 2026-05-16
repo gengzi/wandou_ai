@@ -96,7 +96,7 @@ export const ScriptNode = ({ id, data }: any) => {
   const beats = toArray(data?.output?.beats).slice(0, 4);
   
   return (
-    <div className="w-[340px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
+    <div className="w-[300px] bg-[#111112] rounded-xl border border-white/10 shadow-2xl overflow-hidden group">
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex min-w-0 items-center space-x-2">
           <div className="w-6 h-6 rounded flex items-center justify-center bg-purple-500/20 text-purple-400">
@@ -106,6 +106,9 @@ export const ScriptNode = ({ id, data }: any) => {
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{statusLabel(status)}</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: getString(summary, data?.output?.prompt, `重新生成${title}`) })} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="重新生成">
+            <RefreshCw size={14} />
+          </button>
           <button onClick={() => emitNodeAction('edit-script', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="编辑剧本">
             <Pencil size={14} />
           </button>
@@ -117,7 +120,7 @@ export const ScriptNode = ({ id, data }: any) => {
           </button>
         </div>
       </div>
-      <div className="p-5 space-y-4">
+      <div className="p-4 space-y-3">
         <div>
           <h4 className="text-[11px] font-bold text-slate-400 mb-2 flex items-center justify-between">
             <span>剧本摘要</span>
@@ -129,16 +132,16 @@ export const ScriptNode = ({ id, data }: any) => {
                   : 'bg-white/5 text-slate-500'
             }`}>{modelLabel}</span>
           </h4>
-          <p className="max-h-28 overflow-auto rounded-xl border border-white/5 bg-[#1A1A1C] p-3 text-[13px] leading-relaxed text-slate-300 [overflow-wrap:anywhere] whitespace-pre-wrap">{summary}</p>
+          <p className="max-h-24 overflow-auto rounded-xl border border-white/5 bg-[#1A1A1C] p-3 text-[11px] leading-5 text-slate-300 [overflow-wrap:anywhere] whitespace-pre-wrap">{summary}</p>
           {style && <p className="mt-2 max-h-16 overflow-auto text-[11px] text-slate-500 [overflow-wrap:anywhere] whitespace-pre-wrap">风格：{style}</p>}
         </div>
         <div>
           <h4 className="text-[11px] font-bold text-slate-400 mb-2">提取角色场景</h4>
           {entities.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-2">
               {entities.map((entity: any, index) => (
-                <div key={entity.id || entity.name || entity.shot || index} className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 hover:border-brand/40 transition-colors cursor-pointer group/item">
-                  <div className="text-[13px] font-medium text-slate-200 mb-1 flex items-center justify-between">
+                <div key={entity.id || entity.name || entity.shot || index} className="bg-[#1A1A1C] p-2.5 rounded-xl border border-white/5 hover:border-brand/40 transition-colors cursor-pointer group/item">
+                  <div className="text-[12px] font-medium text-slate-200 mb-1 flex items-center justify-between">
                     <span className="truncate">{getString(entity.name, entity.title, entity.shot, `条目 ${index + 1}`)}</span>
                     <ImageIcon size={12} className="text-slate-500 group-hover/item:text-brand" />
                   </div>
@@ -170,7 +173,7 @@ export const CharacterNode = ({ id, data }: any) => {
   const characters = Array.isArray(data?.output?.characters) ? data.output.characters : [];
 
   return (
-    <div className="w-[420px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
+    <div className="w-[360px] bg-[#111112] rounded-xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex min-w-0 items-center space-x-3">
@@ -190,19 +193,30 @@ export const CharacterNode = ({ id, data }: any) => {
           </button>
         </div>
       </div>
-      <div className={`p-4 ${characters.length > 1 ? 'grid grid-cols-2 gap-4' : 'space-y-4'}`}>
+      <div className={`p-3 ${characters.length > 1 ? 'grid grid-cols-2 gap-3' : 'space-y-3'}`}>
           {characters.length > 0 ? characters.slice(0, 4).map((character: any, characterIndex: number) => {
             const images = getImageUrls(character.images, character.variants, character.thumbnailUrl, character.imageUrl, character.url).slice(0, 4);
+            const designSheet = toArray(character.designSheet).slice(0, 4);
             return (
               <div key={character.id || character.name || characterIndex} className="space-y-4">
                 <div className="flex items-baseline justify-between gap-3">
                     <h4 className="min-w-0 truncate text-[13px] font-bold text-slate-200">角色{characterIndex + 1}: {getString(character.name, character.title, '未命名角色')}</h4>
                     <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: getString(character.prompt, character.description, data?.output?.summary) })} className="shrink-0 text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
                 </div>
-                <p className="max-h-20 overflow-auto rounded-lg border border-white/5 bg-[#1A1A1C] p-2 text-[11px] leading-5 text-slate-400 [overflow-wrap:anywhere] whitespace-pre-wrap">提示词：{getString(character.prompt, character.description, '后端暂未返回角色提示词。')}</p>
+                <p className="max-h-16 overflow-auto rounded-lg border border-white/5 bg-[#1A1A1C] p-2 text-[10px] leading-4 text-slate-400 [overflow-wrap:anywhere] whitespace-pre-wrap">提示词：{getString(character.prompt, character.description, '后端暂未返回角色提示词。')}</p>
+                {designSheet.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {designSheet.map((item: any, sheetIndex: number) => (
+                      <div key={`${character.name || characterIndex}-sheet-${sheetIndex}`} className="rounded-lg border border-white/5 bg-[#1A1A1C] p-2">
+                        <div className="mb-1 text-[10px] font-bold text-brand">{getString(item.label, `设计稿 ${sheetIndex + 1}`)}</div>
+                        <div className="line-clamp-2 text-[10px] leading-4 text-slate-500">{getDisplayText(item.description, item.prompt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {images.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2">
-                    {images.map((imageUrl, imageIndex) => (
+                    {images.slice(0, 2).map((imageUrl, imageIndex) => (
                       <div key={imageUrl} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${imageIndex===0?'border-brand shadow-[0_0_10px_rgba(16,185,129,0.2)]':'border-white/5'} overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all`}>
                         <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt={getString(character.name, '角色素材')} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-between p-1.5 transition-opacity">
@@ -239,7 +253,7 @@ export const StoryboardNode = ({ id, data }: any) => {
   const scenes = Array.isArray(data?.output?.scenes) ? data.output.scenes : [];
 
   return (
-    <div className="w-[360px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
+    <div className="w-[320px] bg-[#111112] rounded-xl border border-white/10 shadow-2xl overflow-hidden group">
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex min-w-0 items-center space-x-2">
@@ -249,18 +263,26 @@ export const StoryboardNode = ({ id, data }: any) => {
           <span className="min-w-0 truncate text-xs font-bold text-slate-300">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{statusLabel(status)}</span>
         </div>
-        <button onClick={() => emitNodeAction('delete', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-          <Trash2 size={14} />
-        </button>
+        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: getString(data?.output?.summary, data?.output?.prompt, `重新生成${title}`) })} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="重新生成">
+            <RefreshCw size={14} />
+          </button>
+          <button onClick={() => emitNodeAction('quote', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
+            <CopyPlus size={14} />
+          </button>
+          <button onClick={() => emitNodeAction('delete', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors" title="删除节点">
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
-      <div className="p-4 space-y-3">
+      <div className="p-3 space-y-2.5">
         {scenes.length > 0 ? scenes.map((scene: any) => (
-          <div key={getDisplayText(scene.shot, scene.id, scene.content)} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3">
+          <div key={getDisplayText(scene.shot, scene.id, scene.content)} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-2.5">
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[11px] font-bold text-brand">镜头 {getDisplayText(scene.shot, scene.title, '镜头')}</span>
               <span className="text-[10px] text-slate-500">{getDisplayText(scene.duration)}</span>
             </div>
-            <p className="max-h-24 overflow-auto text-[12px] leading-5 text-slate-300 [overflow-wrap:anywhere] whitespace-pre-wrap">{getDisplayText(scene.content, scene.prompt, scene.description)}</p>
+            <p className="max-h-16 overflow-auto text-[11px] leading-5 text-slate-300 [overflow-wrap:anywhere] whitespace-pre-wrap">{getDisplayText(scene.content, scene.prompt, scene.description)}</p>
           </div>
         )) : <EmptyState>等待后端返回分镜结果。</EmptyState>}
         {getDisplayText(data?.output?.camera) && <p className="text-[11px] text-slate-500">运镜：{getDisplayText(data?.output?.camera)}</p>}
@@ -274,7 +296,8 @@ export const ImagesNode = ({ id, data }: any) => {
   const title = data?.title || (data?.imageSrc ? '生成分镜视频' : '场景概念图生成');
   const status = data?.status || 'idle';
   const prompt = getString(data?.output?.prompt, data?.output?.summary);
-  const imageError = getString(data?.output?.imageGenerationError);
+  const imageErrors = toArray(data?.output?.imageGenerationErrors).map(String).filter(Boolean);
+  const imageError = getString(data?.output?.imageGenerationError, data?.output?.error, imageErrors[0]);
   const videoUrl = withAuthQuery(getString(data?.output?.url, data?.output?.videoUrl));
   const thumbnailSrc = withAuthQuery(getString(data?.imageSrc, data?.output?.thumbnailUrl));
   const imageSrc = thumbnailSrc;
@@ -286,7 +309,7 @@ export const ImagesNode = ({ id, data }: any) => {
   // 如果是视频节点
   if (isVideoNode) {
     return (
-      <div className="w-[320px] bg-[#111112] p-3 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
+      <div className="w-[280px] bg-[#111112] p-3 rounded-xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
         <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
         
         {/* Node Toolbar on hover */}
@@ -346,11 +369,11 @@ export const ImagesNode = ({ id, data }: any) => {
   }
 
   return (
-    <div className="w-[340px] bg-[#111112] p-4 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
+    <div className="w-[280px] bg-[#111112] p-3 rounded-xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       
       <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1A1A1C] border border-white/10 p-1.5 rounded-xl shadow-xl z-50">
-        <button onClick={() => emitNodeAction('unavailable', id, data)} className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-brand transition-colors text-[11px] whitespace-nowrap">
+        <button onClick={() => emitNodeAction('batch-image', id, data, { prompt: prompt || '基于当前节点批量生成 4 张视觉变体' })} className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-brand transition-colors text-[11px] whitespace-nowrap">
            <Layers size={12} />
            <span>批量操作</span>
         </button>
@@ -369,7 +392,7 @@ export const ImagesNode = ({ id, data }: any) => {
       </div>
 
       {imageUrls.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
           {imageUrls.map((url, i) => (
             <div key={url} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${i===0?'border-brand shadow-[0_0_15px_rgba(16,185,129,0.2)]':'border-white/5 hover:border-white/20'} overflow-hidden relative group/inner cursor-pointer transition-all`}>
               <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover/inner:scale-110" alt="生成素材" />
@@ -385,7 +408,7 @@ export const ImagesNode = ({ id, data }: any) => {
                       <span>图生视频</span>
                    </button>
                    <div className="flex space-x-1.5">
-                      <button onClick={() => emitNodeAction('unavailable', id, data)} className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
+                      <button onClick={() => emitNodeAction('image-variant', id, data, { prompt: `${prompt || '基于当前图片'}，生成一个保持主体一致但构图、姿态、光影略有变化的变体。` })} className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
                       <button onClick={() => emitNodeAction('download', id, data, { url })} className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors flex items-center justify-center">
                         <Download size={10} />
                       </button>
@@ -418,7 +441,7 @@ export const AudioNode = ({ id, data }: any) => {
   const duration = getString(data?.output?.duration);
 
   return (
-    <div className="w-[300px] bg-[#111112] p-4 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
+    <div className="w-[300px] bg-[#111112] p-3 rounded-xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       
       <div className="flex items-center justify-between mb-3 px-1">
@@ -429,9 +452,22 @@ export const AudioNode = ({ id, data }: any) => {
           <span className="min-w-0 truncate text-xs font-bold text-slate-200">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{statusLabel(status)}</span>
         </div>
-        <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 transition-colors">
-          <Trash2 size={12} />
-        </button>
+        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: prompt || `重新生成${title}` })} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-brand transition-colors" title="重新生成">
+            <RefreshCw size={12} />
+          </button>
+          <button onClick={() => emitNodeAction('quote', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-brand transition-colors" title="引入到对话">
+            <CopyPlus size={12} />
+          </button>
+          {audioUrl ? (
+            <button onClick={() => emitNodeAction('download', id, data, { url: audioUrl })} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-brand transition-colors" title="导出音频">
+              <Download size={12} />
+            </button>
+          ) : null}
+          <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 transition-colors" title="删除节点">
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
 
       <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 space-y-3">
@@ -459,9 +495,10 @@ export const FinalVideoNode = ({ id, data }: any) => {
   const status = data?.status || 'idle';
   const thumbnail = getString(data?.output?.thumbnailUrl, data?.output?.imageUrl);
   const videoUrl = withAuthQuery(getString(data?.output?.url, data?.output?.videoUrl));
+  const clips = toArray(data?.output?.clips);
 
   return (
-    <div className="w-[340px] bg-[#111112] rounded-2xl border border-brand/30 shadow-[0_0_36px_rgba(16,185,129,0.12)] overflow-hidden group">
+    <div className="w-[320px] bg-[#111112] rounded-xl border border-brand/30 shadow-[0_0_36px_rgba(16,185,129,0.12)] overflow-hidden group">
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex min-w-0 items-center space-x-2">
@@ -471,9 +508,19 @@ export const FinalVideoNode = ({ id, data }: any) => {
           <span className="min-w-0 truncate text-xs font-bold text-slate-300">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : 'text-slate-500 bg-white/5'}`}>{statusLabel(status)}</span>
         </div>
-        <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Trash2 size={12} />
-        </button>
+        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: getString(data?.output?.summary, `重新生成${title}`) })} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-brand transition-colors" title="重新生成">
+            <RefreshCw size={12} />
+          </button>
+          {videoUrl ? (
+            <button onClick={() => emitNodeAction('download', id, data, { url: videoUrl })} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-brand transition-colors" title="导出成片">
+              <Download size={12} />
+            </button>
+          ) : null}
+          <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 transition-colors" title="删除节点">
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
       <div className="p-3">
         <div className="aspect-video overflow-hidden rounded-xl border border-white/5 bg-slate-900 relative">
@@ -499,6 +546,70 @@ export const FinalVideoNode = ({ id, data }: any) => {
           )}
         </div>
         <p className="mt-3 max-h-20 overflow-auto text-[12px] leading-5 text-slate-300 [overflow-wrap:anywhere] whitespace-pre-wrap">{getDisplayText(data?.output?.summary, '等待合成结果。')}</p>
+        {clips.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
+              <span>分镜时间线</span>
+              <span>{clips.length} 个片段</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto rounded-xl border border-white/5 bg-[#0B0B0C] p-2">
+              {clips.map((clip: any, index: number) => {
+                const firstFrame = clip.firstFrame || {};
+                const clipThumb = withAuthQuery(getString(firstFrame.thumbnailUrl, firstFrame.url, clip.thumbnailUrl, clip.imageUrl));
+                return (
+                  <div key={`${clip.assetId || clip.nodeId || index}-timeline`} className="group relative h-[72px] w-[96px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-slate-900">
+                    {clipThumb ? (
+                      <img src={clipThumb} className="h-full w-full object-cover transition-transform group-hover:scale-105" alt="分镜首帧" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] text-slate-600">分镜</div>
+                    )}
+                    <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded bg-black/70 px-1.5 text-[10px] font-bold text-white">
+                      {index + 1}
+                    </div>
+                    <div className="absolute inset-x-1.5 bottom-1.5 truncate rounded bg-black/65 px-1.5 py-0.5 text-[9px] text-white">
+                      {getString(clip.duration, 'clip')}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {clips.slice(0, 6).map((clip: any, index: number) => {
+              const firstFrame = clip.firstFrame || {};
+              const lastFrame = clip.lastFrame || {};
+              const clipThumb = withAuthQuery(getString(firstFrame.thumbnailUrl, firstFrame.url, clip.thumbnailUrl, clip.imageUrl));
+              const clipUrl = withAuthQuery(getString(clip.url, clip.videoUrl));
+              return (
+                <div key={clip.assetId || clip.nodeId || index} className="flex gap-2 rounded-xl border border-white/5 bg-[#1A1A1C] p-2">
+                  <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-900 border border-white/5">
+                    {clipThumb ? (
+                      clipUrl ? (
+                        <video src={clipUrl} poster={clipThumb} preload="metadata" className="h-full w-full object-cover" />
+                      ) : (
+                        <img src={clipThumb} className="h-full w-full object-cover" alt="分镜片段" />
+                      )
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] text-slate-600">片段</div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="truncate text-[11px] font-bold text-brand">{getString(clip.shot, `分镜 ${String(index + 1).padStart(2, '0')}`)}</span>
+                      <span className="shrink-0 text-[10px] text-slate-500">{getString(clip.duration)}</span>
+                    </div>
+                    {(firstFrame.nodeId || lastFrame.nodeId) && (
+                      <div className="mb-1 flex gap-1 text-[9px] text-slate-500">
+                        {firstFrame.nodeId && <span className="rounded bg-white/5 px-1.5 py-0.5">首帧</span>}
+                        {lastFrame.nodeId && <span className="rounded bg-white/5 px-1.5 py-0.5">尾帧</span>}
+                      </div>
+                    )}
+                    <p className="line-clamp-2 text-[11px] leading-4 text-slate-400">{getDisplayText(clip.summary, clip.content, clip.prompt)}</p>
+                  </div>
+                </div>
+              );
+            })}
+            {clips.length > 6 && <div className="text-center text-[10px] text-slate-500">其余 {clips.length - 6} 个分镜已在时间线中展示</div>}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -10,6 +10,14 @@ public record AgentRunRequest(
         String message,
         String agentName,
         String mode,
-        String nodeId
+        String nodeId,
+        String textModelConfigId,
+        String imageModelConfigId,
+        String videoModelConfigId,
+        String aspectRatio,
+        String resolution,
+        Integer durationSeconds,
+        Boolean audioEnabled,
+        Boolean multiCameraEnabled
 ) {
 }

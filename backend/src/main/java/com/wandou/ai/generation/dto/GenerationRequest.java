@@ -6,6 +6,12 @@ public record GenerationRequest(
         String projectId,
         String canvasId,
         String conversationId,
-        @NotBlank String prompt
+        @NotBlank String prompt,
+        String modelConfigId,
+        String aspectRatio,
+        String resolution,
+        Integer durationSeconds,
+        Boolean audioEnabled,
+        Boolean multiCameraEnabled
 ) {
 }

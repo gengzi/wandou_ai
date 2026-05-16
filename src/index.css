@@ -72,6 +72,106 @@
   background: transparent !important;
 }
 
+.wandou-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.wandou-sheen::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.34) 42%, rgba(255, 255, 255, 0.12) 50%, transparent 62%);
+  transform: translateX(-120%);
+  transition: transform 0.7s ease;
+}
+
+.wandou-sheen:hover::after {
+  transform: translateX(120%);
+}
+
+.wandou-hover-mask {
+  position: relative;
+  overflow: hidden;
+}
+
+.wandou-hover-mask::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.30), transparent 44%);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.wandou-hover-mask:hover::before {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.wandou-float-card {
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+}
+
+.wandou-float-card:hover {
+  transform: translateY(-6px);
+}
+
+.wandou-folder-preview {
+  transition: transform 0.2s ease-out, filter 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+.group:hover .wandou-folder-preview:nth-child(1) {
+  transform: translateY(-6px);
+}
+
+.group:hover .wandou-folder-preview:nth-child(2) {
+  transform: translateY(26px) scale(1.25);
+  transition-delay: 50ms;
+}
+
+.wandou-scroll-fade {
+  position: relative;
+}
+
+.wandou-scroll-fade::before,
+.wandou-scroll-fade::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 72px;
+  pointer-events: none;
+  content: "";
+}
+
+.wandou-scroll-fade::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--fade-bg, #f6f8fc), rgba(246, 248, 252, 0));
+}
+
+.wandou-scroll-fade::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--fade-bg, #f6f8fc), rgba(246, 248, 252, 0));
+}
+
+.wandou-soft-pulse {
+  animation: wandou-soft-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes wandou-soft-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+  }
+  50% {
+    box-shadow: 0 18px 60px rgba(16, 185, 129, 0.18);
+  }
+}
+
 .wandou-loading-shell {
   position: relative;
   display: flex;

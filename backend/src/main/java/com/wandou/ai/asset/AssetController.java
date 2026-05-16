@@ -5,6 +5,7 @@ import com.wandou.ai.asset.dto.AssetCreateRequest;
 import com.wandou.ai.asset.dto.AssetImportResponse;
 import com.wandou.ai.asset.dto.AssetPageResponse;
 import com.wandou.ai.asset.dto.AssetResponse;
+import com.wandou.ai.asset.dto.AssetUpdateRequest;
 import com.wandou.ai.common.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ContentDisposition;
@@ -12,6 +13,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,9 +48,10 @@ public class AssetController {
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "desc") String sort
     ) {
-        return ApiResponse.ok(assetService.page(projectId, type, keyword, page, size));
+        return ApiResponse.ok(assetService.page(projectId, type, keyword, page, size, sort));
     }
 
     @PostMapping
@@ -81,6 +85,22 @@ public class AssetController {
         return assetService.get(assetId)
                 .map(ApiResponse::ok)
                 .orElseGet(() -> ApiResponse.fail("asset not found"));
+    }
+
+    @PatchMapping("/{assetId}")
+    @SaCheckPermission("asset:write")
+    public ApiResponse<AssetResponse> update(@PathVariable String assetId, @Valid @RequestBody AssetUpdateRequest request) {
+        return assetService.update(assetId, request)
+                .map(ApiResponse::ok)
+                .orElseGet(() -> ApiResponse.fail("asset not found"));
+    }
+
+    @DeleteMapping("/{assetId}")
+    @SaCheckPermission("asset:write")
+    public ApiResponse<Boolean> delete(@PathVariable String assetId) {
+        return assetService.delete(assetId)
+                ? ApiResponse.ok(true)
+                : ApiResponse.fail("asset not found");
     }
 
     @GetMapping("/{assetId}/content")

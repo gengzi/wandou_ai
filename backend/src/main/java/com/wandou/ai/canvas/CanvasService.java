@@ -48,8 +48,8 @@ public class CanvasService {
                 "script",
                 "智能剧本生成",
                 "idle",
-                80,
-                260,
+                860,
+                40,
                 toJson(Map.of("title", "智能剧本生成", "status", "idle")),
                 toJson(Map.of()),
                 now,
@@ -65,6 +65,11 @@ public class CanvasService {
         }
         List<CanvasNodeEntity> nodes = nodeRepository.findByCanvasIdOrderByCreatedAtAsc(canvasId);
         return Optional.of(toResponse(canvas.get(), nodes, edgeRepository.findByCanvasIdOrderByCreatedAtAsc(canvasId)));
+    }
+
+    public Optional<CanvasNodeResponse> getNode(String canvasId, String nodeId) {
+        return nodeRepository.findByCanvasIdAndNodeId(canvasId, nodeId)
+                .map(this::toNodeResponse);
     }
 
     @Transactional

@@ -161,7 +161,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
 
   return (
     <div className={`h-full overflow-y-auto scrollbar-hide ${isLight ? 'bg-[#F7FBF9] text-slate-900' : 'bg-[#08090A] text-slate-100'}`}>
-      <div className={`border-b px-8 py-3 text-center text-sm font-semibold ${
+      <div className={`wandou-sheen border-b px-8 py-3 text-center text-sm font-semibold ${
         isLight
           ? 'border-emerald-100 bg-[linear-gradient(90deg,rgba(236,253,245,0.94),rgba(255,255,255,0.96),rgba(209,250,229,0.82))] text-slate-700'
           : 'border-brand/20 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.18),transparent_45%),linear-gradient(90deg,rgba(16,185,129,0.12),rgba(8,9,10,0.95))] text-slate-200'
@@ -246,14 +246,14 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
             animate={{ opacity: 1, y: 0 }}
             className="relative w-full max-w-[860px]"
           >
-            <div className={`absolute -top-12 right-16 flex items-center gap-2 rounded-2xl border px-4 py-2 ${
+            <div className={`wandou-soft-pulse absolute -top-12 right-16 flex items-center gap-2 rounded-2xl border px-4 py-2 ${
               isLight ? 'border-emerald-100 bg-white/80 text-slate-700 shadow-[0_18px_55px_rgba(16,185,129,0.12)] backdrop-blur' : 'border-brand/20 bg-[#101312] shadow-[0_0_35px_rgba(16,185,129,0.2)]'
             }`}>
               <Bot size={18} className="text-brand" />
               <span className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{t('home.agentReady')}</span>
             </div>
 
-            <div className={`flex min-h-[132px] items-stretch gap-4 rounded-[34px] border px-5 py-4 backdrop-blur ${
+            <div className={`wandou-sheen flex min-h-[132px] items-stretch gap-4 rounded-[34px] border px-5 py-4 backdrop-blur ${
               isLight
                 ? 'border-emerald-100 bg-white/72 shadow-[0_24px_70px_rgba(15,118,110,0.14),inset_0_1px_0_rgba(255,255,255,0.92)]'
                 : 'border-brand/35 bg-[radial-gradient(circle_at_34%_0%,rgba(16,185,129,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,20,19,0.95))] shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.42)]'
@@ -348,7 +348,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
                 <button
                   key={item.label}
                   onClick={() => onNavigate(item.label)}
-                  className={`flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-all ${
+                  className={`wandou-float-card flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-all ${
                     item.active
                       ? isLight
                         ? 'border-emerald-200 bg-white/80 text-emerald-700 shadow-[0_16px_36px_rgba(16,185,129,0.12)]'
@@ -403,7 +403,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
               <motion.div
                 key={project.id}
                 whileHover={{ y: -4 }}
-                className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
+                className="wandou-hover-mask overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
               >
                 <button onClick={() => onNavigate(undefined, project.id)} className="block w-full text-left">
                   <div className="relative h-36 overflow-hidden border-b border-white/10 bg-[#121416]">
@@ -466,7 +466,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
           </div>
           <div className="grid grid-cols-2 gap-6">
             {highlights.map((item) => (
-              <button key={item.title} onClick={() => onNavigate()} className="group relative min-h-64 overflow-hidden rounded-3xl border border-white/10 bg-[#111315] p-7 text-left transition-colors hover:border-brand/40">
+              <button key={item.title} onClick={() => onNavigate()} className="wandou-hover-mask group relative min-h-64 overflow-hidden rounded-3xl border border-white/10 bg-[#111315] p-7 text-left transition-colors hover:border-brand/40">
                 <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(15,23,42,0.12))]" />
                 <div className="relative flex h-full flex-col justify-end">
                   <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-white">

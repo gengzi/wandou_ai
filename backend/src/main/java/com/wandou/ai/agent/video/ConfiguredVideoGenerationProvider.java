@@ -36,7 +36,7 @@ public class ConfiguredVideoGenerationProvider implements VideoGenerationProvide
 
     @Override
     public String submit(VideoGenerationRequest request) {
-        ModelConfigEntity config = modelConfigService.findEnabledConfig(request.userId(), "video")
+        ModelConfigEntity config = modelConfigService.findEnabledConfig(request.userId(), "video", request.modelConfigId())
                 .filter(item -> item.apiKeySecret() != null && !item.apiKeySecret().isBlank())
                 .orElseThrow(() -> new IllegalStateException("未配置可用的视频模型，请先在模型配置里启用 video 模型。"));
         Instant startedAt = Instant.now();
@@ -64,8 +64,8 @@ public class ConfiguredVideoGenerationProvider implements VideoGenerationProvide
                 "model", config.modelName(),
                 "prompt", request.prompt(),
                 "duration", durationSeconds(request.duration()),
-                "aspect_ratio", "16:9",
-                "resolution", "720p"
+                "aspect_ratio", normalizedAspectRatio(request.aspectRatio()),
+                "resolution", normalizedResolution(request.resolution())
         ));
         jobs.put(taskId, running(taskId, "视频任务已提交，等待 provider 生成"));
         executorService.submit(() -> completeQWaveTask(config, taskId));
@@ -120,9 +120,10 @@ public class ConfiguredVideoGenerationProvider implements VideoGenerationProvide
                 "model", config.modelName(),
                 "prompt", request.prompt(),
                 "duration", qingyunDurationSeconds(request.duration()),
-                "resolution", "720p",
-                "aspect_ratio", "16:9",
-                "audio", true,
+                "resolution", normalizedResolution(request.resolution()),
+                "aspect_ratio", normalizedAspectRatio(request.aspectRatio()),
+                "audio", request.audioEnabled() == null || request.audioEnabled(),
+                "multi_camera", Boolean.TRUE.equals(request.multiCameraEnabled()),
                 "watermark", false
         ));
         jobs.put(taskId, running(taskId, "青云/Vidu 视频任务已提交，等待生成"));
@@ -200,6 +201,23 @@ public class ConfiguredVideoGenerationProvider implements VideoGenerationProvide
 
     private int qingyunDurationSeconds(String duration) {
         return durationSeconds(duration) <= 5 ? 5 : 10;
+    }
+
+    private String normalizedAspectRatio(String aspectRatio) {
+        if (aspectRatio == null || aspectRatio.isBlank()) {
+            return "16:9";
+        }
+        return switch (aspectRatio.trim()) {
+            case "16:9", "4:3", "1:1", "3:4", "9:16" -> aspectRatio.trim();
+            default -> "16:9";
+        };
+    }
+
+    private String normalizedResolution(String resolution) {
+        if (resolution == null || resolution.isBlank()) {
+            return "720p";
+        }
+        return "1080p".equalsIgnoreCase(resolution.trim()) ? "1080p" : "720p";
     }
 
     private int length(String value) {

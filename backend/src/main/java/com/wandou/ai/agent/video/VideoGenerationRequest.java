@@ -9,6 +9,11 @@ public record VideoGenerationRequest(
         String prompt,
         String keyframePrompt,
         String duration,
-        String model
+        String model,
+        String modelConfigId,
+        String aspectRatio,
+        String resolution,
+        Boolean audioEnabled,
+        Boolean multiCameraEnabled
 ) {
 }

@@ -49,6 +49,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -69,7 +70,7 @@ public class AgentRunService {
     private final AgentRunRepository agentRunRepository;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
-    private final ExecutorService mediaExecutorService = Executors.newFixedThreadPool(2);
+    private final ExecutorService mediaExecutorService = Executors.newFixedThreadPool(4);
 
     public AgentRunService(
             SseHub sseHub,
@@ -228,9 +229,14 @@ public class AgentRunService {
                 executeNodeRegeneration(run, request);
                 return;
             }
+            if (isNodeMediaAction(request.mode()) && request.nodeId() != null && !request.nodeId().isBlank()) {
+                executeNodeMediaAction(run, request);
+                return;
+            }
 
-            VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run);
-            VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(run.userId, request.message(), listener, usageContext(run, null, "agent.plan"));
+            VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run, request);
+            String configuredPrompt = withGenerationSettings(request.message(), request);
+            VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(run.userId, configuredPrompt, listener, request.textModelConfigId(), usageContext(run, null, "agent.plan"));
             VideoAgentOutput scriptOutput = planOutputs.require(VideoAgentStep.SCRIPT);
 
             conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, scriptOutput.text());
@@ -245,7 +251,7 @@ public class AgentRunService {
                     "agentName", run.agentName,
                     "step", "script"
             ));
-            CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", scriptOutput.output());
+            CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", normalizedStepOutput(scriptOutput.output(), request, "script"));
             publishNodeUpdated(run, updatedScriptNode);
             List<ReferenceAsset> referenceAssets = referenceAssets(run.projectId);
             if (!referenceAssets.isEmpty()) {
@@ -255,9 +261,9 @@ public class AgentRunService {
                 publishNodeUpdated(run, updatedScriptNode);
             }
             waitForConfirmation(run, "script", scriptConfirmationMessage(referenceAssets));
-            String approvedBrief = approvedScriptBrief(request.message(), updatedScriptNode.output(), run.confirmationComment, referenceAssets);
+            String approvedBrief = approvedScriptBrief(configuredPrompt, updatedScriptNode.output(), run.confirmationComment, referenceAssets);
 
-            VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(run.userId, approvedBrief, listener, usageContext(run, null, "agent.design"));
+            VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(run.userId, approvedBrief, listener, request.textModelConfigId(), usageContext(run, null, "agent.design"));
             VideoAgentOutput characterOutput = designOutputs.require(VideoAgentStep.CHARACTER);
             VideoAgentOutput storyboardOutput = designOutputs.require(VideoAgentStep.STORYBOARD);
             VideoAgentOutput visualOutput = designOutputs.require(VideoAgentStep.VISUAL);
@@ -268,11 +274,11 @@ public class AgentRunService {
                     "character",
                     "角色一致性生成",
                     "running",
-                    new PositionResponse(500, 80),
+                    new PositionResponse(680, 340),
                     Map.of("sourceNodeId", scriptNode.id(), "step", "character")
             );
             addEdge(run, scriptNode.id(), characterNode.id());
-            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", enrichCharacterOutput(characterOutput.output(), referenceAssets));
+            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", normalizedStepOutput(enrichCharacterOutput(characterOutput.output(), referenceAssets), request, "character"));
             publishNodeUpdated(run, updatedCharacterNode);
 
             CanvasNodeResponse storyboardNode = addNode(run,
@@ -280,125 +286,66 @@ public class AgentRunService {
                     "storyboard",
                     "分镜设计",
                     "running",
-                    new PositionResponse(500, 480),
+                    new PositionResponse(1040, 340),
                     Map.of("sourceNodeId", scriptNode.id(), "step", "storyboard")
             );
             addEdge(run, scriptNode.id(), storyboardNode.id());
             addEdge(run, characterNode.id(), storyboardNode.id());
-            CanvasNodeResponse updatedStoryboardNode = canvasService.updateNode(run.canvasId, storyboardNode.id(), "success", storyboardOutput.output());
+            CanvasNodeResponse updatedStoryboardNode = canvasService.updateNode(run.canvasId, storyboardNode.id(), "success", normalizedStepOutput(storyboardOutput.output(), request, "storyboard"));
             publishNodeUpdated(run, updatedStoryboardNode);
-
-            CanvasNodeResponse imageNode = addNode(run,
-                    run.canvasId,
-                    "images",
-                    "场景概念图生成",
-                    "running",
-                    new PositionResponse(960, 80),
-                    Map.of("sourceNodeId", storyboardNode.id(), "step", "keyframe")
-            );
-            addEdge(run, storyboardNode.id(), imageNode.id());
-            CanvasNodeResponse plannedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "running", visualOutput.output());
-            publishNodeUpdated(run, plannedImageNode);
-            Map<String, Object> imageOutput = new java.util.LinkedHashMap<>(visualOutput.output());
-            imageOutput.putAll(generateKeyframeAssetWithTimeout(run, request, imageNode, visualOutput, referenceAssets));
-            String imageStatus = "skipped".equals(imageOutput.get("imageGenerationStatus")) ? "failed" : "success";
-            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), imageStatus, imageOutput);
-            publishNodeUpdated(run, updatedImageNode);
 
             CanvasNodeResponse audioNode = addNode(run,
                     run.canvasId,
                     "audio",
                     "生成音效配乐",
                     "running",
-                    new PositionResponse(960, 480),
+                    new PositionResponse(680, 960),
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "audio")
             );
             addEdge(run, storyboardNode.id(), audioNode.id());
-            CanvasNodeResponse plannedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "running", audioOutput.output());
+            CanvasNodeResponse plannedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "running", normalizedStepOutput(audioOutput.output(), request, "audio"));
             publishNodeUpdated(run, plannedAudioNode);
-            CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", audioOutput.output());
+            CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", normalizedStepOutput(audioOutput.output(), request, "audio"));
             publishNodeUpdated(run, updatedAudioNode);
 
-            waitForConfirmation(run, "storyboard", "角色、分镜、关键帧和声音设计已完成，请确认后创建视频生成任务。");
+            List<ShotPlan> shots = shotPlans(storyboardOutput, request);
+            waitForConfirmation(run, "storyboard", "角色、分镜和声音设计已完成。确认后将按 " + shots.size() + " 个分镜逐镜头生成关键帧和视频片段。");
 
-            CanvasNodeResponse videoNode = addNode(run,
-                    run.canvasId,
-                    "video",
-                    "图生视频任务",
-                    "running",
-                    new PositionResponse(1380, 80),
-                    Map.of("sourceNodeId", imageNode.id(), "step", "video")
-            );
-            addEdge(run, imageNode.id(), videoNode.id());
-
-            VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(run.userId, approvedBrief, listener, usageContext(run, videoNode.id(), "agent.review-export"));
+            VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(run.userId, approvedBrief, listener, request.textModelConfigId(), usageContext(run, storyboardNode.id(), "agent.review-export"));
             VideoAgentOutput exportOutput = exportOutputs.require(VideoAgentStep.EXPORT);
-
-            TaskResponse task = taskService.create(runId, run.projectId, run.canvasId, videoNode.id(), "video");
-            publish(runId, "task.created", Map.of("task", task));
-
-            VideoGenerationStatus generation = executeVideoGeneration(run, request, visualOutput, exportOutput, task, videoNode, referenceAssets);
-            boolean hasVideoBytes = generation.videoBytes() != null && generation.videoBytes().length > 0;
-            AssetResponse asset = hasVideoBytes
-                    ? assetService.createStoredVideo(
-                            run.projectId,
-                            run.canvasId,
-                            videoNode.id(),
-                            stringValue(exportOutput.output(), "assetName", "AI 生成视频预览"),
-                            generation.videoBytes(),
-                            generation.videoContentType(),
-                            generation.thumbnailBytes(),
-                            generation.thumbnailContentType()
-                    )
-                    : assetService.create(
-                            run.projectId,
-                            run.canvasId,
-                            videoNode.id(),
-                            "video",
-                            stringValue(exportOutput.output(), "assetName", "视频生成占位结果"),
-                            "",
-                            stringValue(visualOutput.output(), "thumbnailUrl", "")
-                    );
-            TaskResponse completedTask = taskService.update(task.id(), "success", 100, hasVideoBytes ? "视频生成完成" : "视频模型暂不可用，已生成可追踪占位结果");
-            publish(runId, "asset.created", Map.of("asset", asset));
-            publish(runId, "task.completed", Map.of("task", completedTask));
-
-            Map<String, Object> videoOutput = new java.util.LinkedHashMap<>();
-            videoOutput.put("assetId", asset.id());
-            videoOutput.put("thumbnailUrl", asset.thumbnailUrl());
-            videoOutput.put("url", asset.url());
-            videoOutput.put("duration", stringValue(exportOutput.output(), "duration", "8s"));
-            videoOutput.put("model", stringValue(exportOutput.output(), "model", "AgentScope Structured Video Runtime"));
-            videoOutput.put("summary", stringValue(exportOutput.output(), "summary", "视频生成完成"));
-            videoOutput.put("providerJobId", generation.providerJobId());
-            videoOutput.put("videoGenerationStatus", hasVideoBytes ? "success" : "skipped");
-            videoOutput.put("referenceAssets", referenceAssetOutput(referenceAssets));
-            if (generation.error() != null && !generation.error().isBlank()) {
-                videoOutput.put("videoGenerationError", generation.error());
-            }
-            CanvasNodeResponse updatedVideoNode = canvasService.updateNode(run.canvasId, videoNode.id(), "success", videoOutput);
-            publishNodeUpdated(run, updatedVideoNode);
 
             CanvasNodeResponse finalNode = addNode(run,
                     run.canvasId,
                     "final",
                     "成片合成",
-                    "success",
-                    new PositionResponse(1380, 480),
-                    Map.of("sourceNodeId", videoNode.id(), "step", "compose")
+                    "running",
+                    new PositionResponse(860, 1320),
+                    Map.of("sourceNodeId", storyboardNode.id(), "step", "compose", "clipCount", shots.size())
             );
-            Map<String, Object> finalOutput = new java.util.LinkedHashMap<>(exportOutput.output());
-            finalOutput.put("assetId", asset.id());
-            finalOutput.put("thumbnailUrl", asset.thumbnailUrl());
-            finalOutput.put("url", asset.url());
-            finalOutput.put("providerJobId", generation.providerJobId());
-            finalOutput.put("videoGenerationStatus", hasVideoBytes ? "success" : "skipped");
-            finalOutput.put("referenceAssets", referenceAssetOutput(referenceAssets));
-            if (generation.error() != null && !generation.error().isBlank()) {
-                finalOutput.put("videoGenerationError", generation.error());
+            addEdge(run, audioNode.id(), finalNode.id());
+
+            List<ClipResult> clips = new java.util.ArrayList<>();
+            for (ShotPlan shot : shots) {
+                ClipResult clip = renderShotClip(run, request, storyboardNode, finalNode, visualOutput, exportOutput, shot, referenceAssets);
+                clips.add(clip);
             }
+
+            Map<String, Object> finalOutput = new java.util.LinkedHashMap<>(exportOutput.output());
+            List<Map<String, Object>> clipOutputs = clips.stream().map(ClipResult::output).toList();
+            Optional<ClipResult> firstClipWithMedia = clips.stream()
+                    .filter(clip -> hasText(clip.asset().url()) || hasText(clip.asset().thumbnailUrl()))
+                    .findFirst();
+            finalOutput.put("clips", clipOutputs);
+            finalOutput.put("clipCount", clips.size());
+            finalOutput.put("assetIds", clips.stream().map(clip -> clip.asset().id()).toList());
+            finalOutput.put("thumbnailUrl", firstClipWithMedia.map(clip -> clip.asset().thumbnailUrl()).orElse(""));
+            finalOutput.put("url", firstClipWithMedia.map(clip -> clip.asset().url()).orElse(""));
+            finalOutput.put("videoGenerationStatus", clips.stream().anyMatch(clip -> "success".equals(clip.output().get("videoGenerationStatus"))) ? "success" : "skipped");
+            finalOutput.put("compositionMode", "shot-sequence");
+            finalOutput.put("summary", "已按 " + clips.size() + " 个分镜生成独立视频片段，最终节点按顺序聚合 clips，后续可接入合成器拼接成长视频。");
+            finalOutput.put("referenceAssets", referenceAssetOutput(referenceAssets));
+            finalOutput.put("parameters", generationSettingsOutput(request));
             CanvasNodeResponse updatedFinalNode = canvasService.updateNode(run.canvasId, finalNode.id(), "success", finalOutput);
-            addEdge(run, videoNode.id(), finalNode.id());
             publishNodeUpdated(run, updatedFinalNode);
 
             mark(run, "success", null);
@@ -431,6 +378,211 @@ public class AgentRunService {
         }
     }
 
+    private ClipResult renderShotClip(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            CanvasNodeResponse storyboardNode,
+            CanvasNodeResponse finalNode,
+            VideoAgentOutput baseVisualOutput,
+            VideoAgentOutput exportOutput,
+            ShotPlan shot,
+            List<ReferenceAsset> referenceAssets
+    ) {
+        VideoAgentOutput shotVisualOutput = visualOutputForShot(baseVisualOutput, shot);
+        PlannedFrame firstFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "first", "首帧", 500);
+        PlannedFrame lastFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "last", "尾帧", 860);
+        Future<Map<String, Object>> firstFrameFuture = mediaExecutorService.submit(() -> generateKeyframeAsset(run, request, firstFramePlan.node(), firstFramePlan.visualOutput(), referenceAssets));
+        Future<Map<String, Object>> lastFrameFuture = mediaExecutorService.submit(() -> generateKeyframeAsset(run, request, lastFramePlan.node(), lastFramePlan.visualOutput(), referenceAssets));
+        FrameResult firstFrame = completeShotFrame(run, firstFramePlan, firstFrameFuture);
+        FrameResult lastFrame = completeShotFrame(run, lastFramePlan, lastFrameFuture);
+
+        CanvasNodeResponse videoNode = addNode(run,
+                run.canvasId,
+                "video",
+                shot.label() + " 视频片段",
+                "running",
+                new PositionResponse(1220, 660 + ((shot.index() - 1) * 220)),
+                Map.of("sourceNodeId", firstFrame.node().id(), "step", "shot-video", "shotIndex", shot.index())
+        );
+        addEdge(run, firstFrame.node().id(), videoNode.id());
+        addEdge(run, lastFrame.node().id(), videoNode.id());
+        addEdge(run, videoNode.id(), finalNode.id());
+
+        TaskResponse task = taskService.create(run.runId, run.projectId, run.canvasId, videoNode.id(), "shot-video");
+        publish(run.runId, "task.created", Map.of("task", task));
+
+        Map<String, Object> videoPlan = new java.util.LinkedHashMap<>(shotVisualOutput.output());
+        videoPlan.put("firstFrame", frameOutput(firstFrame));
+        videoPlan.put("lastFrame", frameOutput(lastFrame));
+        videoPlan.put("firstFramePrompt", stringValue(firstFrame.output(), "prompt", ""));
+        videoPlan.put("lastFramePrompt", stringValue(lastFrame.output(), "prompt", ""));
+        VideoAgentOutput videoVisualOutput = new VideoAgentOutput(shotVisualOutput.step(), shotVisualOutput.agentName(), shotVisualOutput.text(), videoPlan);
+        VideoGenerationStatus generation = executeVideoGeneration(run, request, videoVisualOutput, exportOutput, task, videoNode, referenceAssets);
+        boolean hasVideoBytes = generation.videoBytes() != null && generation.videoBytes().length > 0;
+        String assetName = shot.label() + " 视频片段";
+        AssetResponse asset = hasVideoBytes
+                ? assetService.createStoredVideo(
+                        run.projectId,
+                        run.canvasId,
+                        videoNode.id(),
+                        assetName,
+                        generation.videoBytes(),
+                        generation.videoContentType(),
+                        generation.thumbnailBytes(),
+                        generation.thumbnailContentType()
+                )
+                : assetService.create(
+                        run.projectId,
+                        run.canvasId,
+                        videoNode.id(),
+                        "video",
+                        assetName + "占位结果",
+                        "",
+                        stringValue(firstFrame.output(), "thumbnailUrl", stringValue(lastFrame.output(), "thumbnailUrl", stringValue(shotVisualOutput.output(), "thumbnailUrl", "")))
+                );
+        TaskResponse completedTask = taskService.update(task.id(), "success", 100, hasVideoBytes ? "视频片段生成完成" : "视频模型暂不可用，已生成可追踪占位片段");
+        publish(run.runId, "asset.created", Map.of("asset", asset));
+        publish(run.runId, "task.completed", Map.of("task", completedTask));
+
+        Map<String, Object> videoOutput = new java.util.LinkedHashMap<>();
+        videoOutput.put("nodeId", videoNode.id());
+        videoOutput.put("taskId", task.id());
+        videoOutput.put("assetId", asset.id());
+        videoOutput.put("thumbnailUrl", asset.thumbnailUrl());
+        videoOutput.put("url", asset.url());
+        videoOutput.put("duration", shot.duration());
+        videoOutput.put("model", stringValue(exportOutput.output(), "model", "AgentScope Structured Video Runtime"));
+        videoOutput.put("summary", shot.content());
+        videoOutput.put("prompt", stringValue(videoVisualOutput.output(), "prompt", request.message()));
+        videoOutput.put("firstFrame", frameOutput(firstFrame));
+        videoOutput.put("lastFrame", frameOutput(lastFrame));
+        videoOutput.put("firstFrameUrl", stringValue(firstFrame.output(), "url", stringValue(firstFrame.output(), "thumbnailUrl", "")));
+        videoOutput.put("lastFrameUrl", stringValue(lastFrame.output(), "url", stringValue(lastFrame.output(), "thumbnailUrl", "")));
+        videoOutput.put("shotIndex", shot.index());
+        videoOutput.put("shot", shot.shot());
+        videoOutput.put("providerJobId", generation.providerJobId());
+        videoOutput.put("videoGenerationStatus", hasVideoBytes ? "success" : "skipped");
+        videoOutput.put("referenceAssets", referenceAssetOutput(referenceAssets));
+        videoOutput.put("parameters", generationSettingsOutput(request));
+        if (generation.error() != null && !generation.error().isBlank()) {
+            videoOutput.put("videoGenerationError", generation.error());
+        }
+        CanvasNodeResponse updatedVideoNode = canvasService.updateNode(run.canvasId, videoNode.id(), "success", videoOutput);
+        publishNodeUpdated(run, updatedVideoNode);
+        return new ClipResult(updatedVideoNode, task, asset, generation, videoOutput);
+    }
+
+    private PlannedFrame planShotFrame(
+            MutableAgentRun run,
+            CanvasNodeResponse storyboardNode,
+            VideoAgentOutput shotVisualOutput,
+            ShotPlan shot,
+            String frameKind,
+            String frameTitle,
+            int x
+    ) {
+        VideoAgentOutput frameVisualOutput = visualOutputForShotFrame(shotVisualOutput, shot, frameKind, frameTitle);
+        CanvasNodeResponse frameNode = addNode(run,
+                run.canvasId,
+                "images",
+                shot.label() + " " + frameTitle,
+                "running",
+                new PositionResponse(x, 660 + ((shot.index() - 1) * 220)),
+                Map.of("sourceNodeId", storyboardNode.id(), "step", frameKind + "-frame", "shotIndex", shot.index())
+        );
+        addEdge(run, storyboardNode.id(), frameNode.id());
+        CanvasNodeResponse plannedFrameNode = canvasService.updateNode(run.canvasId, frameNode.id(), "running", frameVisualOutput.output());
+        publishNodeUpdated(run, plannedFrameNode);
+        return new PlannedFrame(plannedFrameNode, frameVisualOutput);
+    }
+
+    private FrameResult completeShotFrame(MutableAgentRun run, PlannedFrame plannedFrame, Future<Map<String, Object>> frameFuture) {
+        Map<String, Object> frameOutput = new java.util.LinkedHashMap<>(plannedFrame.visualOutput().output());
+        try {
+            frameOutput.putAll(frameFuture.get(75, TimeUnit.SECONDS));
+        } catch (TimeoutException ex) {
+            frameOutput.putAll(skippedKeyframeOutput(plannedFrame.visualOutput(), "关键帧生图任务超过 75 秒未完成，已跳过以继续后续视频流程。"));
+            frameFuture.cancel(true);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            frameOutput.putAll(skippedKeyframeOutput(plannedFrame.visualOutput(), "关键帧生图任务被中断，已跳过以继续后续视频流程。"));
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            frameOutput.putAll(skippedKeyframeOutput(plannedFrame.visualOutput(), cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage()));
+        }
+        String frameStatus = "skipped".equals(frameOutput.get("imageGenerationStatus")) ? "failed" : "success";
+        CanvasNodeResponse updatedFrameNode = canvasService.updateNode(run.canvasId, plannedFrame.node().id(), frameStatus, frameOutput);
+        publishNodeUpdated(run, updatedFrameNode);
+        return new FrameResult(updatedFrameNode, frameOutput);
+    }
+
+    private VideoAgentOutput visualOutputForShot(VideoAgentOutput baseVisualOutput, ShotPlan shot) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>(baseVisualOutput.output());
+        String basePrompt = stringValue(baseVisualOutput.output(), "prompt", "");
+        String prompt = """
+                分镜 %s：%s
+                时长：%s
+                内容：%s
+                视觉要求：%s
+                """.formatted(shot.shot(), shot.label(), shot.duration(), shot.content(), basePrompt).trim();
+        output.put("prompt", prompt);
+        output.put("shotIndex", shot.index());
+        output.put("shot", shot.shot());
+        output.put("duration", shot.duration());
+        output.put("content", shot.content());
+        return new VideoAgentOutput(baseVisualOutput.step(), baseVisualOutput.agentName(), baseVisualOutput.text(), output);
+    }
+
+    private VideoAgentOutput visualOutputForShotFrame(VideoAgentOutput shotVisualOutput, ShotPlan shot, String frameKind, String frameTitle) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>(shotVisualOutput.output());
+        boolean lastFrame = "last".equals(frameKind);
+        String basePrompt = stringValue(shotVisualOutput.output(), "prompt", "");
+        String prompt = """
+                %s 的%s设计稿。
+                分镜：%s
+                时长：%s
+                画面内容：%s
+                时间点：%s
+                视觉要求：保持角色、服装、色彩和场景连续性；适合作为视频模型%s输入。%s
+                """.formatted(
+                shot.label(),
+                frameTitle,
+                shot.shot(),
+                shot.duration(),
+                shot.content(),
+                lastFrame ? "镜头结束动作与构图，保留运动后的姿态和情绪结果" : "镜头开始动作与构图，清晰建立角色和场景",
+                lastFrame ? "尾帧" : "首帧",
+                basePrompt.isBlank() ? "" : "\n基础视觉提示：" + basePrompt
+        ).trim();
+        output.put("prompt", prompt);
+        output.put("frameKind", frameKind);
+        output.put("frameTitle", frameTitle);
+        return new VideoAgentOutput(shotVisualOutput.step(), shotVisualOutput.agentName(), shotVisualOutput.text(), output);
+    }
+
+    private List<ShotPlan> shotPlans(VideoAgentOutput storyboardOutput, AgentRunRequest request) {
+        Object scenes = storyboardOutput.output().get("scenes");
+        if (scenes instanceof List<?> items && !items.isEmpty()) {
+            java.util.ArrayList<ShotPlan> shots = new java.util.ArrayList<>();
+            int limit = Math.min(items.size(), 6);
+            for (int index = 0; index < limit; index++) {
+                Object item = items.get(index);
+                if (item instanceof Map<?, ?> scene) {
+                    String shot = mapString(scene, "shot", String.format("%02d", index + 1));
+                    String duration = configuredDuration(request, mapString(scene, "duration", stringValue(storyboardOutput.output(), "duration", "4s")));
+                    String content = mapString(scene, "content", mapString(scene, "prompt", mapString(scene, "description", request.message())));
+                    shots.add(new ShotPlan(index + 1, shot, duration, content));
+                } else if (item != null) {
+                    shots.add(new ShotPlan(index + 1, String.format("%02d", index + 1), "4s", String.valueOf(item)));
+                }
+            }
+            if (!shots.isEmpty()) {
+                return shots;
+            }
+        }
+        return List.of(new ShotPlan(1, "01", configuredDuration(request, stringValue(storyboardOutput.output(), "duration", "8s")), request.message()));
+    }
+
     private VideoGenerationStatus executeVideoGeneration(
             MutableAgentRun run,
             AgentRunRequest request,
@@ -441,8 +593,20 @@ public class AgentRunService {
             List<ReferenceAsset> referenceAssets
     ) {
         String providerJobId;
-        String prompt = withReferenceBrief(request.message(), referenceAssets);
-        String keyframePrompt = withReferenceBrief(stringValue(visualOutput.output(), "prompt", request.message()), referenceAssets);
+        String prompt = withReferenceBrief(stringValue(visualOutput.output(), "content", request.message()), referenceAssets);
+        String firstFramePrompt = stringValue(visualOutput.output(), "firstFramePrompt", "");
+        String lastFramePrompt = stringValue(visualOutput.output(), "lastFramePrompt", "");
+        String keyframePrompt = withReferenceBrief("""
+                %s
+
+                首帧：%s
+
+                尾帧：%s
+                """.formatted(
+                stringValue(visualOutput.output(), "prompt", request.message()),
+                firstFramePrompt.isBlank() ? "沿用分镜首帧设定" : firstFramePrompt,
+                lastFramePrompt.isBlank() ? "沿用分镜尾帧设定" : lastFramePrompt
+        ).trim(), referenceAssets);
         try {
             providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
                     run.userId,
@@ -452,8 +616,13 @@ public class AgentRunService {
                     videoNode.id(),
                     prompt,
                     keyframePrompt,
-                    stringValue(exportOutput.output(), "duration", "8s"),
-                    stringValue(exportOutput.output(), "model", "mock")
+                    configuredDuration(request, stringValue(visualOutput.output(), "duration", stringValue(exportOutput.output(), "duration", "8s"))),
+                    stringValue(exportOutput.output(), "model", "mock"),
+                    request.videoModelConfigId(),
+                    configuredAspectRatio(request),
+                    configuredResolution(request),
+                    configuredAudioEnabled(request),
+                    configuredMultiCameraEnabled(request)
             ));
         } catch (RuntimeException ex) {
             String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
@@ -506,7 +675,7 @@ public class AgentRunService {
         Map<String, Object> output = new java.util.LinkedHashMap<>();
         String prompt = withReferenceBrief(stringValue(visualOutput.output(), "prompt", request.message()), referenceAssets);
         try {
-            ImageGenerationService.ImageResult keyframe = imageGenerationService.generate(run.userId, prompt, providerReferenceUrls(referenceAssets), usageContext(run, imageNode.id(), "agent.keyframe-image"));
+            ImageGenerationService.ImageResult keyframe = imageGenerationService.generate(run.userId, prompt, providerReferenceUrls(referenceAssets), request.imageModelConfigId(), usageContext(run, imageNode.id(), "agent.keyframe-image"));
             AssetResponse keyframeAsset = keyframe.url().isBlank()
                     ? assetService.createStoredAsset(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.bytes(), keyframe.contentType(), keyframe.extension())
                     : assetService.create(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.url(), keyframe.url());
@@ -578,7 +747,7 @@ public class AgentRunService {
         );
     }
 
-    private VideoAgentRuntime.VideoAgentRunListener listenerFor(MutableAgentRun run) {
+    private VideoAgentRuntime.VideoAgentRunListener listenerFor(MutableAgentRun run, AgentRunRequest request) {
         return new VideoAgentRuntime.VideoAgentRunListener() {
             @Override
             public void onAgentActivated(AgentBase agent) {
@@ -608,13 +777,16 @@ public class AgentRunService {
             @Override
             public void onStepCompleted(VideoAgentStep step, String agentName, VideoAgentOutput output, GenerateReason reason) {
                 agentRunMonitor.stepCompleted(run.runId, step, agentName, output, reason);
+                Map<String, Object> eventOutput = output == null
+                        ? Map.of()
+                        : normalizedStepOutput(output.output(), request, step.code());
                 publish(run.runId, "agent.step.completed", Map.of(
                         "step", step.code(),
                         "title", step.title(),
                         "agentName", agentName,
                         "reason", reason.name(),
                         "content", output == null ? "" : output.text(),
-                        "output", output == null ? Map.of() : output.output()
+                        "output", eventOutput
                 ));
             }
         };
@@ -699,6 +871,9 @@ public class AgentRunService {
     private void executeNodeRegeneration(MutableAgentRun run, AgentRunRequest request) {
         String runId = run.runId;
         String nodeId = request.nodeId();
+        CanvasNodeResponse currentNode = canvasService.getNode(run.canvasId, nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("canvas node not found: " + nodeId));
+        List<ReferenceAsset> referenceAssets = referenceAssets(run.projectId);
         String assistantText = "我会基于你的指令重新生成当前节点：" + request.message();
         conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, assistantText);
         publish(runId, "message.completed", Map.of(
@@ -707,19 +882,40 @@ public class AgentRunService {
                 "content", assistantText
         ));
 
-        sleep(300);
         CanvasNodeResponse runningNode = canvasService.updateNode(run.canvasId, nodeId, "running", Map.of(
                 "prompt", request.message(),
                 "step", "regenerate",
+                "nodeType", currentNode.type(),
                 "regeneratingAt", Instant.now().toString()
         ));
         publishNodeUpdated(run, runningNode);
 
-        sleep(800);
-        CanvasNodeResponse completedNode = canvasService.updateNode(run.canvasId, nodeId, "success", regeneratedOutput(request.message(), nodeId));
-        publishNodeUpdated(run, completedNode);
+        try {
+            CanvasNodeResponse completedNode;
+            if ("images".equals(currentNode.type())) {
+                completedNode = executeImageBatchAction(run, request, 1, referenceAssets);
+            } else if ("video".equals(currentNode.type())) {
+                completedNode = executeImageToVideoAction(run, request);
+            } else {
+                completedNode = canvasService.updateNode(
+                        run.canvasId,
+                        nodeId,
+                        "success",
+                        regeneratedNodeOutput(run, request, currentNode, referenceAssets)
+                );
+            }
+            publishNodeUpdated(run, completedNode);
+        } catch (RuntimeException ex) {
+            String error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            CanvasNodeResponse failedNode = canvasService.mergeNodeOutput(run.canvasId, nodeId, "failed", Map.of(
+                    "step", "regenerate",
+                    "error", error,
+                    "completedAt", Instant.now().toString()
+            ));
+            publishNodeUpdated(run, failedNode);
+            throw ex;
+        }
 
-        sleep(100);
         mark(run, "success", null);
         publish(runId, "run.completed", Map.of(
                 "runId", runId,
@@ -729,45 +925,235 @@ public class AgentRunService {
         ));
     }
 
-    private Map<String, Object> regeneratedOutput(String message, String nodeId) {
-        if (nodeId.startsWith("script")) {
-            return Map.of(
-                    "summary", "已重写剧本：" + message,
-                    "style", "更聚焦叙事节奏和镜头推进",
-                    "beats", java.util.List.of("重写开场", "加强角色动机", "补充视觉高潮", "形成视频任务")
-            );
+    private boolean isNodeMediaAction(String mode) {
+        return "image-variant".equals(mode) || "batch-image".equals(mode) || "image-to-video".equals(mode);
+    }
+
+    private void executeNodeMediaAction(MutableAgentRun run, AgentRunRequest request) {
+        String runId = run.runId;
+        String nodeId = request.nodeId();
+        String mode = request.mode();
+        String title = switch (mode) {
+            case "image-to-video" -> "图生视频";
+            case "batch-image" -> "批量生成图片";
+            default -> "生成图片变体";
+        };
+        conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, title + "已开始：" + request.message());
+        publish(runId, "message.completed", Map.of(
+                "role", "assistant",
+                "sender", run.agentName,
+                "content", title + "已开始，结果会写回当前画布节点和素材库。"
+        ));
+        publishNodeUpdated(run, canvasService.mergeNodeOutput(run.canvasId, nodeId, "running", Map.of(
+                "action", mode,
+                "prompt", request.message(),
+                "startedAt", Instant.now().toString()
+        )));
+
+        try {
+            List<ReferenceAsset> referenceAssets = referenceAssets(run.projectId);
+            CanvasNodeResponse completedNode = "image-to-video".equals(mode)
+                    ? executeImageToVideoAction(run, request)
+                    : executeImageBatchAction(run, request, "batch-image".equals(mode) ? 4 : 1, referenceAssets);
+            publishNodeUpdated(run, completedNode);
+            conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, title + "已完成。");
+            publish(runId, "message.completed", Map.of(
+                    "role", "assistant",
+                    "sender", run.agentName,
+                    "content", title + "已完成，已更新节点并写入素材库。"
+            ));
+            mark(run, "success", null);
+            publish(runId, "run.completed", Map.of("runId", runId, "status", "success", "mode", mode, "nodeId", nodeId));
+        } catch (RuntimeException ex) {
+            String error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            CanvasNodeResponse failedNode = canvasService.mergeNodeOutput(run.canvasId, nodeId, "failed", Map.of(
+                    "action", mode,
+                    "error", error,
+                    "completedAt", Instant.now().toString()
+            ));
+            publishNodeUpdated(run, failedNode);
+            mark(run, "failed", error);
+            publish(runId, "run.failed", Map.of("runId", runId, "status", "failed", "mode", mode, "nodeId", nodeId, "error", error));
         }
-        if (nodeId.startsWith("char")) {
-            return Map.of(
-                    "characters", java.util.List.of(
-                            Map.of("name", "主角新版", "prompt", message + "，保持同一角色身份，强化可识别服装与面部特征"),
-                            Map.of("name", "伙伴新版", "prompt", "延续主设定，强化材质、轮廓和情绪反馈")
-                    ),
-                    "consistency", "已把本次修改作为角色一致性约束。"
-            );
+    }
+
+    private CanvasNodeResponse executeImageBatchAction(MutableAgentRun run, AgentRunRequest request, int count, List<ReferenceAsset> referenceAssets) {
+        java.util.List<Map<String, Object>> images = new java.util.ArrayList<>();
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        List<String> referenceUrls = providerReferenceUrls(referenceAssets);
+        for (int index = 0; index < count; index++) {
+            String prompt = count == 1
+                    ? withReferenceBrief(request.message(), referenceAssets)
+                    : withReferenceBrief(request.message() + "\n变体编号 " + (index + 1) + "：保持主体一致，调整构图、动作、光影或镜头距离。", referenceAssets);
+            try {
+                ImageGenerationService.ImageResult image = imageGenerationService.generate(
+                        run.userId,
+                        prompt,
+                        referenceUrls,
+                        request.imageModelConfigId(),
+                        usageContext(run, request.nodeId(), "node." + request.mode())
+                );
+                AssetResponse asset = image.url().isBlank()
+                        ? assetService.createStoredAsset(run.projectId, run.canvasId, request.nodeId(), "image", count == 1 ? "图片变体" : "批量图片 " + (index + 1), image.bytes(), image.contentType(), image.extension())
+                        : assetService.create(run.projectId, run.canvasId, request.nodeId(), "image", count == 1 ? "图片变体" : "批量图片 " + (index + 1), image.url(), image.url());
+                publish(run.runId, "asset.created", Map.of("asset", asset));
+                Map<String, Object> item = new java.util.LinkedHashMap<>();
+                item.put("assetId", asset.id());
+                item.put("url", asset.url());
+                item.put("thumbnailUrl", asset.thumbnailUrl());
+                item.put("prompt", prompt);
+                item.putAll(image.metadata());
+                images.add(item);
+            } catch (RuntimeException ex) {
+                errors.add("第 " + (index + 1) + " 张失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+            }
+            CanvasNodeResponse progressNode = canvasService.mergeNodeOutput(run.canvasId, request.nodeId(), "running", Map.of(
+                    "action", request.mode(),
+                    "prompt", request.message(),
+                    "images", images,
+                    "imageGenerationErrors", errors,
+                    "imageGenerationStatus", errors.isEmpty() ? "running" : "partial_running",
+                    "progress", Math.round(((index + 1) * 100.0f) / count)
+            ));
+            publishNodeUpdated(run, progressNode);
         }
-        if (nodeId.contains("storyboard")) {
-            return Map.of(
-                    "scenes", java.util.List.of(
-                            Map.of("shot", "01", "duration", "2s", "content", "根据新指令重新建立画面：" + message),
-                            Map.of("shot", "02", "duration", "3s", "content", "强化角色动作和情绪变化。"),
-                            Map.of("shot", "03", "duration", "3s", "content", "以更明确的奇观镜头收束。")
-                    ),
-                    "camera", "重新规划推拉摇移节奏"
-            );
+        if (images.isEmpty()) {
+            throw new IllegalStateException(errors.isEmpty() ? "图片生成未返回可用资产" : String.join("；", errors));
         }
-        if (nodeId.startsWith("audio")) {
-            return Map.of(
-                    "prompt", message,
-                    "duration", "8s",
-                    "mood", "已按新节点指令重配"
-            );
+        return canvasService.mergeNodeOutput(run.canvasId, request.nodeId(), "success", Map.of(
+                "action", request.mode(),
+                "prompt", request.message(),
+                "images", images,
+                "imageGenerationErrors", errors,
+                "imageGenerationStatus", errors.isEmpty() ? "success" : "partial_success",
+                "referenceAssets", referenceAssetOutput(referenceAssets),
+                "completedAt", Instant.now().toString()
+        ));
+    }
+
+    private CanvasNodeResponse executeImageToVideoAction(MutableAgentRun run, AgentRunRequest request) {
+        String providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
+                run.userId,
+                run.runId,
+                run.projectId,
+                run.canvasId,
+                request.nodeId(),
+                request.message(),
+                request.message(),
+                configuredDuration(request, "8s"),
+                "configured-video",
+                request.videoModelConfigId(),
+                configuredAspectRatio(request),
+                configuredResolution(request),
+                configuredAudioEnabled(request),
+                configuredMultiCameraEnabled(request)
+        ));
+        publish(run.runId, "video.provider.submitted", Map.of(
+                "providerJobId", providerJobId,
+                "nodeId", request.nodeId()
+        ));
+        VideoGenerationStatus status = waitForNodeVideo(run, providerJobId);
+        if (!"succeeded".equals(status.status()) || status.videoBytes() == null || status.videoBytes().length == 0) {
+            throw new IllegalStateException(status.error() == null ? "视频 provider 未返回可用视频" : status.error());
         }
-        return Map.of(
-                "prompt", message,
-                "summary", "已按当前节点指令重新生成具体结果：" + message,
-                "duration", "8s"
+        AssetResponse asset = assetService.createStoredVideo(
+                run.projectId,
+                run.canvasId,
+                request.nodeId(),
+                "图生视频",
+                status.videoBytes(),
+                status.videoContentType(),
+                status.thumbnailBytes(),
+                status.thumbnailContentType()
         );
+        publish(run.runId, "asset.created", Map.of("asset", asset));
+        return canvasService.mergeNodeOutput(run.canvasId, request.nodeId(), "success", Map.of(
+                "action", request.mode(),
+                "prompt", request.message(),
+                "assetId", asset.id(),
+                "url", asset.url(),
+                "thumbnailUrl", asset.thumbnailUrl(),
+                "providerJobId", providerJobId,
+                "videoGenerationStatus", "success",
+                "parameters", generationSettingsOutput(request),
+                "completedAt", Instant.now().toString()
+        ));
+    }
+
+    private VideoGenerationStatus waitForNodeVideo(MutableAgentRun run, String providerJobId) {
+        for (int attempt = 0; attempt < 180; attempt++) {
+            ensureCanContinue(run);
+            VideoGenerationStatus status = videoGenerationProvider.getStatus(providerJobId);
+            if (status.terminal()) {
+                return status;
+            }
+            sleep(2000);
+        }
+        throw new IllegalStateException("video provider timed out");
+    }
+
+    private Map<String, Object> regeneratedNodeOutput(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            CanvasNodeResponse node,
+            List<ReferenceAsset> referenceAssets
+    ) {
+        String prompt = nodeRegenerationPrompt(request, node, referenceAssets);
+        VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run, request);
+        Map<String, Object> output = switch (node.type()) {
+            case "script" -> videoAgentRuntime
+                    .plan(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.script"))
+                    .require(VideoAgentStep.SCRIPT)
+                    .output();
+            case "character" -> enrichCharacterOutput(videoAgentRuntime
+                    .design(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.character"))
+                    .require(VideoAgentStep.CHARACTER)
+                    .output(), referenceAssets);
+            case "storyboard" -> videoAgentRuntime
+                    .design(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.storyboard"))
+                    .require(VideoAgentStep.STORYBOARD)
+                    .output();
+            case "audio" -> videoAgentRuntime
+                    .design(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.audio"))
+                    .require(VideoAgentStep.AUDIO)
+                    .output();
+            case "final" -> videoAgentRuntime
+                    .reviewAndExport(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.final"))
+                    .require(VideoAgentStep.EXPORT)
+                    .output();
+            default -> videoAgentRuntime
+                    .plan(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate"))
+                    .require(VideoAgentStep.SCRIPT)
+                    .output();
+        };
+        Map<String, Object> next = new java.util.LinkedHashMap<>(output);
+        next.put("prompt", request.message());
+        next.put("regeneratedFromNodeId", node.id());
+        next.put("regeneratedAt", Instant.now().toString());
+        if (!referenceAssets.isEmpty()) {
+            next.put("referenceAssets", referenceAssetOutput(referenceAssets));
+        }
+        return normalizedStepOutput(next, request, node.type());
+    }
+
+    private String nodeRegenerationPrompt(AgentRunRequest request, CanvasNodeResponse node, List<ReferenceAsset> referenceAssets) {
+        String currentOutput = compactJson(node.output(), 1800);
+        String prompt = """
+                请真实重新生成画布节点，不要只改状态或返回占位文本。
+                节点标题：%s
+                节点类型：%s
+                用户指令：%s
+                当前节点输出：%s
+                """.formatted(node.title(), node.type(), request.message(), currentOutput).trim();
+        return withReferenceBrief(prompt, referenceAssets);
+    }
+
+    private String compactJson(Map<String, Object> value, int maxLength) {
+        if (value == null || value.isEmpty()) {
+            return "{}";
+        }
+        String compact = String.valueOf(value);
+        return compact.length() <= maxLength ? compact : compact.substring(0, maxLength) + "...";
     }
 
     private static String stringValue(Map<String, Object> output, String key, String fallback) {
@@ -776,6 +1162,121 @@ public class AgentRunService {
             return string;
         }
         return fallback;
+    }
+
+    private static String configuredAspectRatio(AgentRunRequest request) {
+        String value = request.aspectRatio();
+        if (value == null || value.isBlank()) {
+            return "16:9";
+        }
+        return switch (value.trim()) {
+            case "16:9", "4:3", "1:1", "3:4", "9:16" -> value.trim();
+            default -> "16:9";
+        };
+    }
+
+    private static String configuredResolution(AgentRunRequest request) {
+        String value = request.resolution();
+        return value != null && value.equalsIgnoreCase("1080p") ? "1080p" : "720p";
+    }
+
+    private static String configuredDuration(AgentRunRequest request, String fallback) {
+        Integer seconds = request.durationSeconds();
+        if (seconds == null || seconds < 1) {
+            return fallback == null || fallback.isBlank() ? "5s" : fallback;
+        }
+        int clamped = Math.max(1, Math.min(seconds, 30));
+        return clamped + "s";
+    }
+
+    private static boolean configuredAudioEnabled(AgentRunRequest request) {
+        return request.audioEnabled() == null || request.audioEnabled();
+    }
+
+    private static boolean configuredMultiCameraEnabled(AgentRunRequest request) {
+        return Boolean.TRUE.equals(request.multiCameraEnabled());
+    }
+
+    private static Map<String, Object> generationSettingsOutput(AgentRunRequest request) {
+        return Map.of(
+                "aspectRatio", configuredAspectRatio(request),
+                "resolution", configuredResolution(request),
+                "duration", configuredDuration(request, "5s"),
+                "audioEnabled", configuredAudioEnabled(request),
+                "multiCameraEnabled", configuredMultiCameraEnabled(request)
+        );
+    }
+
+    private static Map<String, Object> normalizedStepOutput(Map<String, Object> output, AgentRunRequest request, String step) {
+        Map<String, Object> next = new java.util.LinkedHashMap<>(output == null ? Map.of() : output);
+        Map<String, Object> settings = generationSettingsOutput(request);
+        next.put("parameters", settings);
+        if ("script".equals(step)) {
+            next.put("durationSeconds", request.durationSeconds() == null ? 5 : Math.max(1, Math.min(request.durationSeconds(), 30)));
+        }
+        if ("storyboard".equals(step)) {
+            Object scenes = next.get("scenes");
+            if (scenes instanceof List<?> items) {
+                next.put("scenes", items.stream()
+                        .map(item -> normalizeSceneDuration(item, request))
+                        .toList());
+            }
+            next.put("duration", configuredDuration(request, "5s"));
+        }
+        if ("audio".equals(step)) {
+            next.put("duration", configuredDuration(request, "5s"));
+            next.put("audioEnabled", configuredAudioEnabled(request));
+        }
+        return next;
+    }
+
+    private static Object normalizeSceneDuration(Object item, AgentRunRequest request) {
+        if (!(item instanceof Map<?, ?> scene)) {
+            return item;
+        }
+        Map<String, Object> next = new java.util.LinkedHashMap<>();
+        scene.forEach((key, value) -> {
+            if (key instanceof String stringKey && value != null) {
+                next.put(stringKey, value);
+            }
+        });
+        next.put("duration", configuredDuration(request, mapString(scene, "duration", "5s")));
+        return next;
+    }
+
+    private static String withGenerationSettings(String prompt, AgentRunRequest request) {
+        return """
+                %s
+
+                生成配置：
+                - 画面比例：%s
+                - 分辨率：%s
+                - 单段视频时长：%s
+                - 音效：%s
+                - 多镜头：%s
+                """.formatted(
+                prompt == null ? "" : prompt,
+                configuredAspectRatio(request),
+                configuredResolution(request),
+                configuredDuration(request, "5s"),
+                configuredAudioEnabled(request) ? "开启" : "关闭",
+                configuredMultiCameraEnabled(request) ? "开启" : "关闭"
+        ).trim();
+    }
+
+    private static String mapString(Map<?, ?> output, String key, String fallback) {
+        Object value = output.get(key);
+        if (value instanceof String string && !string.isBlank()) {
+            return string;
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            return String.valueOf(value);
+        }
+        return fallback;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private List<ReferenceAsset> referenceAssets(String projectId) {
@@ -798,13 +1299,11 @@ public class AgentRunService {
     }
 
     private static String approvedScriptBrief(String originalPrompt, Map<String, Object> scriptOutput, String confirmationComment, List<ReferenceAsset> referenceAssets) {
-        if (confirmationComment != null && !confirmationComment.isBlank() && !"前端确认继续".equals(confirmationComment)) {
-            return withReferenceBrief(confirmationComment, referenceAssets);
-        }
         String summary = stringValue(scriptOutput, "summary", "");
         String style = stringValue(scriptOutput, "style", "");
         Object beats = scriptOutput.get("beats");
         StringBuilder brief = new StringBuilder(originalPrompt == null ? "" : originalPrompt);
+        brief.append("\n\n请以后续节点严格延续这个已确认剧本，不要改换主体、角色或场景。");
         if (!summary.isBlank()) {
             brief.append("\n\n确认后的剧本摘要：").append(summary);
         }
@@ -819,6 +1318,10 @@ public class AgentRunService {
                     brief.append("\n").append(index++).append(". ").append(item);
                 }
             }
+        }
+        if (confirmationComment != null && !confirmationComment.isBlank() && !"前端确认继续".equals(confirmationComment)) {
+            brief.append("\n\n用户确认备注/修改意见：").append(confirmationComment);
+            brief.append("\n备注只能作为增量修改意见，不得覆盖上面的原始需求、主体和已确认剧本。");
         }
         return withReferenceBrief(brief.toString(), referenceAssets);
     }
@@ -854,9 +1357,25 @@ public class AgentRunService {
                 .toList();
     }
 
+    private static Map<String, Object> frameOutput(FrameResult frame) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>();
+        output.put("nodeId", frame.node().id());
+        output.put("url", stringValue(frame.output(), "url", ""));
+        output.put("thumbnailUrl", stringValue(frame.output(), "thumbnailUrl", ""));
+        output.put("prompt", stringValue(frame.output(), "prompt", ""));
+        output.put("frameKind", stringValue(frame.output(), "frameKind", ""));
+        output.put("frameTitle", stringValue(frame.output(), "frameTitle", ""));
+        output.put("imageGenerationStatus", stringValue(frame.output(), "imageGenerationStatus", ""));
+        String error = stringValue(frame.output(), "imageGenerationError", "");
+        if (!error.isBlank()) {
+            output.put("imageGenerationError", error);
+        }
+        return output;
+    }
+
     private static Map<String, Object> enrichCharacterOutput(Map<String, Object> output, List<ReferenceAsset> referenceAssets) {
         if (referenceAssets == null || referenceAssets.isEmpty()) {
-            return output;
+            return enrichCharacterDesignSheets(output);
         }
         Map<String, Object> next = new java.util.LinkedHashMap<>(output);
         List<Map<String, Object>> referenceOutput = referenceAssetOutput(referenceAssets);
@@ -868,7 +1387,8 @@ public class AgentRunService {
                             "name", asset.name(),
                             "prompt", "参考项目素材 " + asset.name() + "，保持图片中的角色外观、轮廓、色彩和可识别特征。",
                             "images", List.of(referenceDisplayUrl(asset)),
-                            "sourceAssetId", asset.id()
+                            "sourceAssetId", asset.id(),
+                            "designSheet", defaultCharacterDesignSheet(asset.name())
                     ))
                     .toList());
             return next;
@@ -887,12 +1407,45 @@ public class AgentRunService {
                 enriched.putIfAbsent("sourceAssetId", asset.id());
                 enriched.putIfAbsent("images", List.of(referenceDisplayUrl(asset)));
                 enriched.putIfAbsent("referenceAsset", referenceOutput.get(index % referenceOutput.size()));
+                enriched.putIfAbsent("designSheet", defaultCharacterDesignSheet(String.valueOf(enriched.getOrDefault("name", asset.name()))));
                 enrichedCharacters.add(enriched);
                 index++;
             }
         }
         next.put("characters", enrichedCharacters);
+        return enrichCharacterDesignSheets(next);
+    }
+
+    private static Map<String, Object> enrichCharacterDesignSheets(Map<String, Object> output) {
+        Object characters = output.get("characters");
+        if (!(characters instanceof List<?> items) || items.isEmpty()) {
+            return output;
+        }
+        Map<String, Object> next = new java.util.LinkedHashMap<>(output);
+        java.util.ArrayList<Map<String, Object>> enrichedCharacters = new java.util.ArrayList<>();
+        for (Object item : items) {
+            if (item instanceof Map<?, ?> character) {
+                Map<String, Object> enriched = new java.util.LinkedHashMap<>();
+                character.forEach((key, value) -> {
+                    if (key instanceof String stringKey && value != null) {
+                        enriched.put(stringKey, value);
+                    }
+                });
+                enriched.putIfAbsent("designSheet", defaultCharacterDesignSheet(String.valueOf(enriched.getOrDefault("name", "角色"))));
+                enrichedCharacters.add(enriched);
+            }
+        }
+        next.put("characters", enrichedCharacters);
         return next;
+    }
+
+    private static List<Map<String, Object>> defaultCharacterDesignSheet(String name) {
+        return List.of(
+                Map.of("label", "三视图", "description", name + " 的正面、侧面、背面设计，固定比例、轮廓、服装和关键识别点。"),
+                Map.of("label", "表情组", "description", "开心、惊讶、专注、害怕等核心表情，保持脸部结构一致。"),
+                Map.of("label", "动作姿态", "description", "站立、奔跑、转身、互动动作，适配后续分镜首尾帧。"),
+                Map.of("label", "色板材质", "description", "主体颜色、服装材质、配饰和光影风格，用于统一关键帧。")
+        );
     }
 
     private static String referenceDisplayUrl(ReferenceAsset asset) {
@@ -920,6 +1473,38 @@ public class AgentRunService {
             String url,
             String thumbnailUrl,
             String providerUrl
+    ) {
+    }
+
+    private record ShotPlan(
+            int index,
+            String shot,
+            String duration,
+            String content
+    ) {
+        String label() {
+            return "Shot " + String.format("%02d", index);
+        }
+    }
+
+    private record ClipResult(
+            CanvasNodeResponse videoNode,
+            TaskResponse task,
+            AssetResponse asset,
+            VideoGenerationStatus generation,
+            Map<String, Object> output
+    ) {
+    }
+
+    private record FrameResult(
+            CanvasNodeResponse node,
+            Map<String, Object> output
+    ) {
+    }
+
+    private record PlannedFrame(
+            CanvasNodeResponse node,
+            VideoAgentOutput visualOutput
     ) {
     }
 

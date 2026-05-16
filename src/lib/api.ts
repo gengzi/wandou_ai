@@ -527,6 +527,7 @@ export async function listAssetsPage(payload: {
   keyword?: string;
   page?: number;
   size?: number;
+  sort?: 'asc' | 'desc';
 }): Promise<AssetPageResponse> {
   const url = new URL(apiUrl('/api/assets/page'));
   if (payload.projectId) url.searchParams.set('projectId', payload.projectId);
@@ -534,6 +535,7 @@ export async function listAssetsPage(payload: {
   if (payload.keyword) url.searchParams.set('keyword', payload.keyword);
   url.searchParams.set('page', String(payload.page ?? 0));
   url.searchParams.set('size', String(payload.size ?? 10));
+  url.searchParams.set('sort', payload.sort ?? 'desc');
   return requestJson<AssetPageResponse>(url.toString());
 }
 
@@ -554,6 +556,28 @@ export async function createAsset(payload: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAsset(assetId: string, payload: {
+  projectId?: string;
+  canvasId?: string;
+  nodeId?: string;
+  type: string;
+  name: string;
+  url: string;
+  thumbnailUrl?: string;
+}): Promise<AssetResponse> {
+  return requestJson<AssetResponse>(`/api/assets/${assetId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAsset(assetId: string): Promise<boolean> {
+  return requestJson<boolean>(`/api/assets/${assetId}`, {
+    method: 'DELETE',
   });
 }
 
@@ -583,6 +607,7 @@ export async function generateChat(payload: {
   canvasId?: string;
   conversationId?: string;
   prompt: string;
+  modelConfigId?: string;
 }): Promise<GenerationResponse> {
   return requestJson<GenerationResponse>('/api/generation/chat', {
     method: 'POST',
@@ -596,6 +621,7 @@ export async function generateImage(payload: {
   canvasId?: string;
   conversationId?: string;
   prompt: string;
+  modelConfigId?: string;
 }): Promise<GenerationResponse> {
   return requestJson<GenerationResponse>('/api/generation/image', {
     method: 'POST',
@@ -609,6 +635,12 @@ export async function generateVideo(payload: {
   canvasId?: string;
   conversationId?: string;
   prompt: string;
+  modelConfigId?: string;
+  aspectRatio?: string;
+  resolution?: string;
+  durationSeconds?: number;
+  audioEnabled?: boolean;
+  multiCameraEnabled?: boolean;
 }): Promise<GenerationResponse> {
   return requestJson<GenerationResponse>('/api/generation/video', {
     method: 'POST',
@@ -625,6 +657,14 @@ export async function startAgentRun(payload: {
   agentName?: string;
   mode?: string;
   nodeId?: string;
+  textModelConfigId?: string;
+  imageModelConfigId?: string;
+  videoModelConfigId?: string;
+  aspectRatio?: string;
+  resolution?: string;
+  durationSeconds?: number;
+  audioEnabled?: boolean;
+  multiCameraEnabled?: boolean;
 }): Promise<AgentRunResponse> {
   return requestJson<AgentRunResponse>('/api/agent/runs', {
     method: 'POST',

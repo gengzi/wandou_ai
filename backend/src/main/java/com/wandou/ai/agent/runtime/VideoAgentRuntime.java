@@ -50,10 +50,14 @@ public class VideoAgentRuntime {
     }
 
     public VideoAgentOutputs plan(String userId, String prompt, VideoAgentRunListener listener, ModelUsageContext usageContext) {
+        return plan(userId, prompt, listener, null, usageContext);
+    }
+
+    public VideoAgentOutputs plan(String userId, String prompt, VideoAgentRunListener listener, String modelConfigId, ModelUsageContext usageContext) {
         Msg input = userMessage(prompt);
         SequentialPipeline pipeline = SequentialPipeline.builder()
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.DIRECTOR, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.SCRIPT, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.DIRECTOR, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.SCRIPT, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
                 .build();
         Msg script = pipeline.execute(input).block();
         return VideoAgentOutputs.from(List.of(script));
@@ -64,12 +68,16 @@ public class VideoAgentRuntime {
     }
 
     public VideoAgentOutputs design(String userId, String prompt, VideoAgentRunListener listener, ModelUsageContext usageContext) {
+        return design(userId, prompt, listener, null, usageContext);
+    }
+
+    public VideoAgentOutputs design(String userId, String prompt, VideoAgentRunListener listener, String modelConfigId, ModelUsageContext usageContext) {
         Msg input = userMessage(prompt);
         FanoutPipeline pipeline = FanoutPipeline.builder()
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.CHARACTER, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.STORYBOARD, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.VISUAL, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.AUDIO, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.CHARACTER, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.STORYBOARD, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.VISUAL, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.AUDIO, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
                 .concurrent()
                 .build();
         List<Msg> results = pipeline.execute(input).block();
@@ -81,10 +89,14 @@ public class VideoAgentRuntime {
     }
 
     public VideoAgentOutputs reviewAndExport(String userId, String prompt, VideoAgentRunListener listener, ModelUsageContext usageContext) {
+        return reviewAndExport(userId, prompt, listener, null, usageContext);
+    }
+
+    public VideoAgentOutputs reviewAndExport(String userId, String prompt, VideoAgentRunListener listener, String modelConfigId, ModelUsageContext usageContext) {
         Msg input = userMessage(prompt);
         SequentialPipeline pipeline = SequentialPipeline.builder()
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.REVIEW, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
-                .addAgent(new TemplateVideoAgent(VideoAgentStep.EXPORT, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.REVIEW, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
+                .addAgent(new TemplateVideoAgent(VideoAgentStep.EXPORT, listener, userId, textModelService, objectMapper, promptTemplateService, executionPlanCompiler, modelConfigId, usageContext))
                 .build();
         Msg export = pipeline.execute(input).block();
         return VideoAgentOutputs.from(List.of(export));
@@ -170,6 +182,7 @@ public class VideoAgentRuntime {
         private final ObjectMapper objectMapper;
         private final PromptTemplateService promptTemplateService;
         private final VideoExecutionPlanCompiler executionPlanCompiler;
+        private final String modelConfigId;
         private final ModelUsageContext usageContext;
 
         private TemplateVideoAgent(VideoAgentStep step, VideoAgentRunListener listener) {
@@ -177,7 +190,7 @@ public class VideoAgentRuntime {
         }
 
         private TemplateVideoAgent(VideoAgentStep step, VideoAgentRunListener listener, VideoExecutionPlanCompiler executionPlanCompiler) {
-            this(step, listener, null, null, null, null, executionPlanCompiler, ModelUsageContext.endpoint("agent.step"));
+            this(step, listener, null, null, null, null, executionPlanCompiler, null, ModelUsageContext.endpoint("agent.step"));
         }
 
         private TemplateVideoAgent(
@@ -188,6 +201,7 @@ public class VideoAgentRuntime {
                 ObjectMapper objectMapper,
                 PromptTemplateService promptTemplateService,
                 VideoExecutionPlanCompiler executionPlanCompiler,
+                String modelConfigId,
                 ModelUsageContext usageContext
         ) {
             super(step.title(), "Wandou video generation agent: " + step.code());
@@ -198,6 +212,7 @@ public class VideoAgentRuntime {
             this.objectMapper = objectMapper;
             this.promptTemplateService = promptTemplateService;
             this.executionPlanCompiler = executionPlanCompiler;
+            this.modelConfigId = modelConfigId;
             this.usageContext = usageContext;
         }
 
@@ -268,6 +283,7 @@ public class VideoAgentRuntime {
                                 getName(),
                                 systemPromptFor(step, prompt),
                                 userPromptFor(step, prompt),
+                                modelConfigId,
                                 stepUsageContext()
                         )
                         .orElseThrow(() -> new IllegalStateException("未配置可用的真实文本模型，请先在模型配置里启用 text 模型。"));

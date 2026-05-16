@@ -44,11 +44,19 @@ public class ImageGenerationService {
     }
 
     public ImageResult generate(String userId, String prompt, ModelUsageContext usageContext) {
-        return generate(userId, prompt, List.of(), usageContext);
+        return generate(userId, prompt, List.of(), null, usageContext);
+    }
+
+    public ImageResult generate(String userId, String prompt, String modelConfigId, ModelUsageContext usageContext) {
+        return generate(userId, prompt, List.of(), modelConfigId, usageContext);
     }
 
     public ImageResult generate(String userId, String prompt, List<String> referenceImageUrls, ModelUsageContext usageContext) {
-        ModelConfigEntity config = modelConfigService.findEnabledConfig(userId, "image")
+        return generate(userId, prompt, referenceImageUrls, null, usageContext);
+    }
+
+    public ImageResult generate(String userId, String prompt, List<String> referenceImageUrls, String modelConfigId, ModelUsageContext usageContext) {
+        ModelConfigEntity config = modelConfigService.findEnabledConfig(userId, "image", modelConfigId)
                 .filter(item -> !requiresApiKey(item) || (item.apiKeySecret() != null && !item.apiKeySecret().isBlank()))
                 .orElseThrow(() -> new IllegalStateException("未配置可用的真实生图模型，请先在模型配置里启用 image 模型。"));
         Instant startedAt = Instant.now();

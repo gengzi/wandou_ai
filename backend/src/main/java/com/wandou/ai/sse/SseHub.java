@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -24,6 +25,7 @@ public class SseHub {
 
     private final Map<String, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<String, List<SseEvent>> history = new ConcurrentHashMap<>();
+    private final Map<SseEmitter, Set<String>> emittedEventIds = new ConcurrentHashMap<>();
     private final SseEventRepository eventRepository;
     private final ObjectMapper objectMapper;
 
@@ -87,11 +89,17 @@ public class SseHub {
                 emitters.remove(runId);
             }
         }
+        emittedEventIds.remove(emitter);
     }
 
     private void sendToEmitter(String runId, SseEmitter emitter, SseEvent event) {
         try {
+            Set<String> sentIds = emittedEventIds.computeIfAbsent(emitter, key -> ConcurrentHashMap.newKeySet());
+            if (!sentIds.add(event.id())) {
+                return;
+            }
             emitter.send(SseEmitter.event()
+                    .id(event.id())
                     .name(event.event())
                     .data(event, MediaType.APPLICATION_JSON));
         } catch (IOException ex) {

@@ -36,7 +36,11 @@ public class TextModelService {
     }
 
     public Optional<TextModelCompletion> generate(String userId, String agentName, String systemPrompt, String userPrompt, ModelUsageContext usageContext) {
-        Optional<ModelConfigEntity> maybeConfig = modelConfigService.findEnabledConfig(userId, "text");
+        return generate(userId, agentName, systemPrompt, userPrompt, null, usageContext);
+    }
+
+    public Optional<TextModelCompletion> generate(String userId, String agentName, String systemPrompt, String userPrompt, String modelConfigId, ModelUsageContext usageContext) {
+        Optional<ModelConfigEntity> maybeConfig = modelConfigService.findEnabledConfig(userId, "text", modelConfigId);
         if (maybeConfig.isEmpty()) {
             return Optional.empty();
         }
