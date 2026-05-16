@@ -1,11 +1,15 @@
 package com.wandou.ai.sse;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,9 +19,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class SseHub {
 
     private static final int MAX_HISTORY_PER_RUN = 200;
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
     private final Map<String, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<String, List<SseEvent>> history = new ConcurrentHashMap<>();
+    private final SseEventRepository eventRepository;
+    private final ObjectMapper objectMapper;
+
+    public SseHub(SseEventRepository eventRepository, ObjectMapper objectMapper) {
+        this.eventRepository = eventRepository;
+        this.objectMapper = objectMapper;
+    }
 
     public SseEmitter subscribe(String runId) {
         SseEmitter emitter = new SseEmitter(0L);
@@ -33,6 +46,13 @@ public class SseHub {
     }
 
     public void send(String runId, SseEvent event) {
+        eventRepository.save(new SseEventEntity(
+                event.id(),
+                runId,
+                event.event(),
+                toJson(event.data()),
+                event.createdAt()
+        ));
         List<SseEvent> runHistory = history.computeIfAbsent(runId, key -> new CopyOnWriteArrayList<>());
         runHistory.add(event);
         if (runHistory.size() > MAX_HISTORY_PER_RUN) {
@@ -48,6 +68,14 @@ public class SseHub {
     }
 
     public List<SseEvent> replay(String runId) {
+        List<SseEventEntity> persisted = eventRepository.findTop200ByRunIdOrderByCreatedAtDesc(runId);
+        if (!persisted.isEmpty()) {
+            List<SseEvent> events = persisted.stream()
+                    .map(this::toEvent)
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+            Collections.reverse(events);
+            return events;
+        }
         return new ArrayList<>(history.getOrDefault(runId, List.of()));
     }
 
@@ -68,6 +96,35 @@ public class SseHub {
                     .data(event, MediaType.APPLICATION_JSON));
         } catch (IOException ex) {
             remove(runId, emitter);
+        }
+    }
+
+    private SseEvent toEvent(SseEventEntity entity) {
+        return new SseEvent(
+                entity.id(),
+                entity.eventName(),
+                entity.runId(),
+                fromJson(entity.dataJson()),
+                entity.createdAt()
+        );
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (JsonProcessingException ex) {
+            return "{}";
+        }
+    }
+
+    private Map<String, Object> fromJson(String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(value, MAP_TYPE);
+        } catch (JsonProcessingException ex) {
+            return Map.of("unreadable", true);
         }
     }
 }

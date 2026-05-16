@@ -66,6 +66,7 @@ public class AgentRunService {
     private final VideoGenerationProvider videoGenerationProvider;
     private final ImageGenerationService imageGenerationService;
     private final AgentRunMonitor agentRunMonitor;
+    private final AgentRunRepository agentRunRepository;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
     private final ExecutorService mediaExecutorService = Executors.newFixedThreadPool(2);
@@ -80,7 +81,8 @@ public class AgentRunService {
             VideoAgentRuntime videoAgentRuntime,
             VideoGenerationProvider videoGenerationProvider,
             ImageGenerationService imageGenerationService,
-            AgentRunMonitor agentRunMonitor
+            AgentRunMonitor agentRunMonitor,
+            AgentRunRepository agentRunRepository
     ) {
         this.sseHub = sseHub;
         this.projectService = projectService;
@@ -92,6 +94,7 @@ public class AgentRunService {
         this.videoGenerationProvider = videoGenerationProvider;
         this.imageGenerationService = imageGenerationService;
         this.agentRunMonitor = agentRunMonitor;
+        this.agentRunRepository = agentRunRepository;
     }
 
     public AgentRunResponse start(AgentRunRequest request) {
@@ -115,6 +118,7 @@ public class AgentRunService {
         );
         runs.put(runId, run);
         agentRunMonitor.startRun(runId, run.createdAt, run.status);
+        saveRun(run);
         conversationService.addMessage(conversation.id(), project.id(), "user", "用户", request.message());
         executorService.submit(() -> execute(run, request));
         return new AgentRunResponse(runId, conversation.id(), canvasId, "running", "/api/agent/runs/" + runId + "/events");
@@ -122,7 +126,10 @@ public class AgentRunService {
 
     public Optional<AgentRunDetailResponse> get(String runId) {
         MutableAgentRun run = runs.get(runId);
-        return run == null ? Optional.empty() : Optional.of(run.toDetail(sseHub.replay(runId)));
+        if (run != null) {
+            return Optional.of(run.toDetail(sseHub.replay(runId)));
+        }
+        return agentRunRepository.findById(runId).map(this::toDetail);
     }
 
     public AgentRunControlResponse confirm(String runId, AgentRunControlRequest request) {
@@ -935,6 +942,51 @@ public class AgentRunService {
         run.error = error;
         agentRunMonitor.status(run.runId, status);
         run.updatedAt = Instant.now();
+        saveRun(run);
+    }
+
+    private void saveRun(MutableAgentRun run) {
+        agentRunRepository.findById(run.runId)
+                .ifPresentOrElse(
+                        entity -> {
+                            entity.update(run.status, run.error, run.checkpoint, run.updatedAt);
+                            agentRunRepository.save(entity);
+                        },
+                        () -> agentRunRepository.save(new AgentRunEntity(
+                                run.runId,
+                                run.userId,
+                                run.projectId,
+                                run.conversationId,
+                                run.canvasId,
+                                run.status,
+                                run.agentName,
+                                run.message,
+                                run.error,
+                                run.checkpoint,
+                                "/api/agent/runs/" + run.runId + "/events",
+                                run.createdAt,
+                                run.updatedAt
+                        ))
+                );
+    }
+
+    private AgentRunDetailResponse toDetail(AgentRunEntity run) {
+        return new AgentRunDetailResponse(
+                run.id(),
+                run.projectId(),
+                run.conversationId(),
+                run.canvasId(),
+                run.status(),
+                run.agentName(),
+                run.message(),
+                run.error(),
+                run.checkpoint(),
+                run.streamUrl(),
+                agentRunMonitor.snapshot(run.id()),
+                sseHub.replay(run.id()),
+                run.createdAt(),
+                run.updatedAt()
+        );
     }
 
     private String valueOrDefault(String value, String fallback) {

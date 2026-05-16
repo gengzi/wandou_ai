@@ -1,5 +1,8 @@
 package com.wandou.ai.agent.monitor;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wandou.ai.agent.dto.AgentRunMonitorResponse;
 import com.wandou.ai.agent.dto.AgentStepMonitorResponse;
 import com.wandou.ai.agent.runtime.VideoAgentOutput;
@@ -22,6 +25,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @ConditionalOnProperty(prefix = "wandou.ai.agent.monitor", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class InMemoryAgentRunMonitor implements AgentRunMonitor {
+    private static final TypeReference<List<AgentStepMonitorResponse>> STEP_LIST_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
+    };
     private static final Set<String> IMPORTANT_EVENTS = Set.of(
             "agent.step.completed",
             "agent.confirmation.required",
@@ -34,10 +41,14 @@ public class InMemoryAgentRunMonitor implements AgentRunMonitor {
     );
 
     private final Map<String, RunMonitor> runs = new ConcurrentHashMap<>();
+    private final AgentRunMonitorSnapshotRepository snapshotRepository;
+    private final ObjectMapper objectMapper;
     private final boolean sseEnabled;
     private final long minPublishIntervalMs;
 
-    public InMemoryAgentRunMonitor(WandouAiProperties properties) {
+    public InMemoryAgentRunMonitor(WandouAiProperties properties, AgentRunMonitorSnapshotRepository snapshotRepository, ObjectMapper objectMapper) {
+        this.snapshotRepository = snapshotRepository;
+        this.objectMapper = objectMapper;
         WandouAiProperties.AgentMonitor monitor = properties.getAgent().getMonitor();
         this.sseEnabled = monitor.isSseEnabled();
         this.minPublishIntervalMs = monitor.getMinPublishIntervalMs();
@@ -46,56 +57,76 @@ public class InMemoryAgentRunMonitor implements AgentRunMonitor {
     @Override
     public void startRun(String runId, Instant startedAt, String status) {
         runs.put(runId, new RunMonitor(startedAt, status));
+        persist(runId);
     }
 
     @Override
     public void status(String runId, String status) {
         run(runId).status(status);
+        persist(runId);
     }
 
     @Override
     public void event(String runId, String eventName) {
         run(runId).event(eventName);
+        if ("run.monitor.updated".equals(eventName)) {
+            return;
+        }
+        if (IMPORTANT_EVENTS.contains(eventName)) {
+            persist(runId);
+        }
     }
 
     @Override
     public void stepStarted(String runId, VideoAgentStep step, String agentName) {
         run(runId).stepStarted(step, agentName);
+        persist(runId);
     }
 
     @Override
     public void stepCompleted(String runId, VideoAgentStep step, String agentName, VideoAgentOutput output, GenerateReason reason) {
         run(runId).stepCompleted(step, agentName, output, reason);
+        persist(runId);
     }
 
     @Override
     public void confirmationRequired(String runId) {
         run(runId).confirmationRequired();
+        persist(runId);
     }
 
     @Override
     public void confirmationResolved(String runId) {
         run(runId).confirmationResolved();
+        persist(runId);
     }
 
     @Override
     public void interrupted(String runId) {
         run(runId).interrupted();
+        persist(runId);
     }
 
     @Override
     public void resumed(String runId) {
         run(runId).resumed();
+        persist(runId);
     }
 
     @Override
     public void cancelled(String runId) {
         run(runId).cancelled();
+        persist(runId);
     }
 
     @Override
     public AgentRunMonitorResponse snapshot(String runId) {
-        return run(runId).snapshot(runId);
+        if (runs.containsKey(runId)) {
+            return run(runId).snapshot(runId);
+        }
+        return snapshotRepository.findById(runId)
+                .map(this::toResponse)
+                .orElseGet(() -> run(runId).snapshot(runId));
     }
 
     @Override
@@ -113,6 +144,64 @@ public class InMemoryAgentRunMonitor implements AgentRunMonitor {
 
     private RunMonitor run(String runId) {
         return runs.computeIfAbsent(runId, key -> new RunMonitor(Instant.now(), "unknown"));
+    }
+
+    private void persist(String runId) {
+        AgentRunMonitorResponse snapshot = run(runId).snapshot(runId);
+        snapshotRepository.save(new AgentRunMonitorSnapshotEntity(
+                snapshot.runId(),
+                snapshot.status(),
+                blank(snapshot.currentStep()),
+                blank(snapshot.bottleneckStep()),
+                snapshot.runDurationMs(),
+                snapshot.eventCount(),
+                snapshot.interruptionCount(),
+                snapshot.confirmationWaitCount(),
+                snapshot.totalConfirmationWaitMs(),
+                toJson(snapshot.steps()),
+                toJson(snapshot.designSignals()),
+                snapshot.updatedAt()
+        ));
+    }
+
+    private AgentRunMonitorResponse toResponse(AgentRunMonitorSnapshotEntity entity) {
+        return new AgentRunMonitorResponse(
+                entity.runId(),
+                entity.status(),
+                entity.currentStep(),
+                entity.bottleneckStep(),
+                entity.runDurationMs(),
+                entity.eventCount(),
+                entity.interruptionCount(),
+                entity.confirmationWaitCount(),
+                entity.totalConfirmationWaitMs(),
+                fromJson(entity.stepsJson(), STEP_LIST_TYPE, List.of()),
+                fromJson(entity.designSignalsJson(), STRING_LIST_TYPE, List.of()),
+                entity.updatedAt()
+        );
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? List.of() : value);
+        } catch (JsonProcessingException ex) {
+            return "[]";
+        }
+    }
+
+    private <T> T fromJson(String value, TypeReference<T> type, T fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return objectMapper.readValue(value, type);
+        } catch (JsonProcessingException ex) {
+            return fallback;
+        }
+    }
+
+    private String blank(String value) {
+        return value == null ? "" : value;
     }
 
     private static final class RunMonitor {
