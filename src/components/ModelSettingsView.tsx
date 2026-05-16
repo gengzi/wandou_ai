@@ -3,6 +3,7 @@ import { CheckCircle2, KeyRound, Plus, Save, Trash2 } from 'lucide-react';
 import { createModelConfig, deleteModelConfig, listModelConfigs, ModelConfigResponse, updateModelConfig } from '../lib/api';
 
 type Capability = 'text' | 'image' | 'video' | 'audio';
+type CompatibilityMode = 'openai' | 'qwave-task' | 'qingyun-task';
 
 const capabilities: Array<{ id: Capability; label: string; hint: string }> = [
   { id: 'text', label: '文本模型', hint: '剧本、规划、总结' },
@@ -18,6 +19,7 @@ const emptyForm = {
   displayName: 'OpenAI Compatible',
   baseUrl: 'https://api.openai.com/v1',
   modelName: '',
+  compatibilityMode: 'openai' as CompatibilityMode,
   apiKey: '',
   enabled: true,
 };
@@ -52,6 +54,7 @@ export default function ModelSettingsView() {
       displayName: config.displayName,
       baseUrl: config.baseUrl,
       modelName: config.modelName,
+      compatibilityMode: config.compatibilityMode || 'openai',
       apiKey: '',
       enabled: config.enabled,
     });
@@ -77,6 +80,7 @@ export default function ModelSettingsView() {
         displayName: form.displayName,
         baseUrl: form.baseUrl,
         modelName: form.modelName,
+        compatibilityMode: form.compatibilityMode,
         apiKey: form.apiKey,
         enabled: form.enabled,
       };
@@ -170,6 +174,13 @@ export default function ModelSettingsView() {
                       {config.enabled && <CheckCircle2 size={14} className="shrink-0 text-brand" />}
                     </div>
                     <div className="mt-1 truncate text-xs text-slate-500">{config.modelName}</div>
+                    <div className="mt-1 truncate text-[11px] text-slate-500">
+                      {config.compatibilityMode === 'qingyun-task'
+                        ? 'Qingyun/Vidu Task API'
+                        : config.compatibilityMode === 'qwave-task'
+                          ? 'QWave Task API'
+                          : 'OpenAI Compatible'}
+                    </div>
                     <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-500">
                       <KeyRound size={12} />
                       <span>{config.apiKeyPreview || '未保存 Key'}</span>
@@ -234,6 +245,22 @@ export default function ModelSettingsView() {
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
               placeholder="https://api.openai.com/v1"
             />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-slate-400">接口兼容模式</span>
+            <select
+              value={form.compatibilityMode}
+              onChange={(event) => setForm({ ...form, compatibilityMode: event.target.value as CompatibilityMode })}
+              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+            >
+              <option value="openai">OpenAI Compatible</option>
+              <option value="qingyun-task">Qingyun/Vidu Task API</option>
+              <option value="qwave-task">QWave Task API</option>
+            </select>
+            <span className="mt-1 block text-[11px] leading-5 text-slate-500">
+              OpenAI 兼容模式使用聊天/生图同步接口；Qingyun/Vidu Task API 和 QWave Task API 用于异步任务式图片、视频模型。
+            </span>
           </label>
 
           <label className="block">

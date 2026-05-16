@@ -92,6 +92,7 @@ public class GenerationService {
         addUserMessage(request);
         CanvasNodeResponse node = addNode(request, "video", "视频生成", 1300, 120);
         String providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
+                userId,
                 "direct",
                 request.projectId(),
                 request.canvasId(),

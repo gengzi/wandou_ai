@@ -32,6 +32,9 @@ public class ModelConfigEntity {
     @Column(name = "model_name", nullable = false)
     private String modelName;
 
+    @Column(name = "compatibility_mode", nullable = false)
+    private String compatibilityMode;
+
     @Column(name = "api_key_secret")
     private String apiKeySecret;
 
@@ -47,7 +50,7 @@ public class ModelConfigEntity {
     protected ModelConfigEntity() {
     }
 
-    public ModelConfigEntity(String id, String userId, String capability, String provider, String displayName, String baseUrl, String modelName, String apiKeySecret, boolean enabled, Instant createdAt, Instant updatedAt) {
+    public ModelConfigEntity(String id, String userId, String capability, String provider, String displayName, String baseUrl, String modelName, String compatibilityMode, String apiKeySecret, boolean enabled, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.userId = userId;
         this.capability = capability;
@@ -55,6 +58,7 @@ public class ModelConfigEntity {
         this.displayName = displayName;
         this.baseUrl = baseUrl;
         this.modelName = modelName;
+        this.compatibilityMode = compatibilityMode;
         this.apiKeySecret = apiKeySecret;
         this.enabled = enabled;
         this.createdAt = createdAt;
@@ -89,6 +93,10 @@ public class ModelConfigEntity {
         return modelName;
     }
 
+    public String compatibilityMode() {
+        return compatibilityMode == null || compatibilityMode.isBlank() ? "openai" : compatibilityMode;
+    }
+
     public String apiKeySecret() {
         return apiKeySecret;
     }
@@ -105,12 +113,13 @@ public class ModelConfigEntity {
         return updatedAt;
     }
 
-    public void update(String capability, String provider, String displayName, String baseUrl, String modelName, String apiKeySecret, boolean enabled, Instant updatedAt) {
+    public void update(String capability, String provider, String displayName, String baseUrl, String modelName, String compatibilityMode, String apiKeySecret, boolean enabled, Instant updatedAt) {
         this.capability = capability;
         this.provider = provider;
         this.displayName = displayName;
         this.baseUrl = baseUrl;
         this.modelName = modelName;
+        this.compatibilityMode = compatibilityMode;
         if (apiKeySecret != null && !apiKeySecret.isBlank()) {
             this.apiKeySecret = apiKeySecret;
         }

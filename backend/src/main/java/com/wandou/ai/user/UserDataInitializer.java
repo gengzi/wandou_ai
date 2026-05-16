@@ -106,10 +106,10 @@ public class UserDataInitializer implements ApplicationRunner {
         }
         Instant now = Instant.now();
         if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc("usr_admin", "text").isEmpty()) {
-            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_text", "usr_admin", "text", "test", "Test Text Model", "mock://text", "test-text", "test-key", true, now, now));
+            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_text", "usr_admin", "text", "test", "Test Text Model", "mock://text", "test-text", "openai", "test-key", true, now, now));
         }
         if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc("usr_admin", "image").isEmpty()) {
-            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_image", "usr_admin", "image", "test", "Test Image Model", "mock://image", "test-image", "test-key", true, now, now));
+            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_image", "usr_admin", "image", "test", "Test Image Model", "mock://image", "test-image", "openai", "test-key", true, now, now));
         }
     }
 }

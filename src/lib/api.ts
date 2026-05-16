@@ -151,6 +151,7 @@ export interface ModelConfigResponse {
   displayName: string;
   baseUrl: string;
   modelName: string;
+  compatibilityMode: 'openai' | 'qwave-task' | 'qingyun-task';
   apiKeyPreview: string;
   enabled: boolean;
   createdAt: string;
@@ -254,6 +255,7 @@ export async function createModelConfig(payload: {
   displayName: string;
   baseUrl: string;
   modelName: string;
+  compatibilityMode?: string;
   apiKey?: string;
   enabled?: boolean;
 }): Promise<ModelConfigResponse> {
@@ -270,6 +272,7 @@ export async function updateModelConfig(id: string, payload: {
   displayName: string;
   baseUrl: string;
   modelName: string;
+  compatibilityMode?: string;
   apiKey?: string;
   enabled?: boolean;
 }): Promise<ModelConfigResponse> {

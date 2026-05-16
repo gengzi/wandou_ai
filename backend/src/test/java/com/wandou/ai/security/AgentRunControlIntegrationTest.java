@@ -2,6 +2,8 @@ package com.wandou.ai.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wandou.ai.modelconfig.ModelConfigEntity;
+import com.wandou.ai.modelconfig.ModelConfigRepository;
 import com.wandou.ai.user.UserAccount;
 import com.wandou.ai.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,9 @@ class AgentRunControlIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ModelConfigRepository modelConfigRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -149,6 +154,31 @@ class AgentRunControlIntegrationTest {
                         .param("projectId", project.path("id").asText()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].status").value("failed"));
+    }
+
+    @Test
+    void agentScopeRunCompletesWhenImageModelIsNotConfigured() throws Exception {
+        createEditorTextModelConfigOnly();
+        String token = login("editor@wandou.ai", "Wandou@123456");
+        JsonNode project = createProject(token);
+
+        String runId = startRun(token, project.path("id").asText(), project.path("canvasId").asText(), project.path("conversationId").asText());
+
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "剧本可以，继续。");
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "角色和分镜通过。");
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "生成成片。");
+
+        JsonNode completed = awaitStatus(token, runId, "success");
+        assertEvent(completed, "run.completed");
+
+        mockMvc.perform(get("/api/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .param("projectId", project.path("id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].status").value("success"));
     }
 
     @Test
@@ -293,6 +323,27 @@ class AgentRunControlIntegrationTest {
                 true,
                 Instant.now(),
                 null
+        ));
+    }
+
+    private void createEditorTextModelConfigOnly() {
+        if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc("usr_editor", "text").isPresent()) {
+            return;
+        }
+        Instant now = Instant.now();
+        modelConfigRepository.save(new ModelConfigEntity(
+                "model_cfg_editor_text",
+                "usr_editor",
+                "text",
+                "test",
+                "Editor Test Text Model",
+                "mock://text",
+                "test-text",
+                "openai",
+                "test-key",
+                true,
+                now,
+                now
         ));
     }
 }

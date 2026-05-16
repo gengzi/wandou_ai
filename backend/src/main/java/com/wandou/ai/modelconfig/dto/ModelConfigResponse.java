@@ -9,6 +9,7 @@ public record ModelConfigResponse(
         String displayName,
         String baseUrl,
         String modelName,
+        String compatibilityMode,
         String apiKeyPreview,
         boolean enabled,
         Instant createdAt,

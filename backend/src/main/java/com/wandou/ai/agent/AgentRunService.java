@@ -265,19 +265,8 @@ public class AgentRunService {
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "keyframe")
             );
             addEdge(run, storyboardNode.id(), imageNode.id());
-            ImageGenerationService.ImageResult keyframe = imageGenerationService.generate(
-                    run.userId,
-                    stringValue(visualOutput.output(), "prompt", request.message())
-            );
-            AssetResponse keyframeAsset = keyframe.url().isBlank()
-                    ? assetService.createStoredAsset(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.bytes(), keyframe.contentType(), keyframe.extension())
-                    : assetService.create(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.url(), keyframe.url());
-            publish(runId, "asset.created", Map.of("asset", keyframeAsset));
             Map<String, Object> imageOutput = new java.util.LinkedHashMap<>(visualOutput.output());
-            imageOutput.put("assetId", keyframeAsset.id());
-            imageOutput.put("url", keyframeAsset.url());
-            imageOutput.put("thumbnailUrl", keyframeAsset.thumbnailUrl());
-            imageOutput.putAll(keyframe.metadata());
+            imageOutput.putAll(generateKeyframeAsset(run, request, imageNode, visualOutput));
             CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", imageOutput);
             publishNodeUpdated(run, updatedImageNode);
 
@@ -387,6 +376,7 @@ public class AgentRunService {
             CanvasNodeResponse videoNode
     ) {
         String providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
+                run.userId,
                 run.runId,
                 run.projectId,
                 run.canvasId,
@@ -432,6 +422,33 @@ public class AgentRunService {
         }
         failVideoTask(run, task, videoNode, "video provider timed out");
         throw new IllegalStateException("video provider timed out");
+    }
+
+    private Map<String, Object> generateKeyframeAsset(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            CanvasNodeResponse imageNode,
+            VideoAgentOutput visualOutput
+    ) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>();
+        String prompt = stringValue(visualOutput.output(), "prompt", request.message());
+        try {
+            ImageGenerationService.ImageResult keyframe = imageGenerationService.generate(run.userId, prompt);
+            AssetResponse keyframeAsset = keyframe.url().isBlank()
+                    ? assetService.createStoredAsset(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.bytes(), keyframe.contentType(), keyframe.extension())
+                    : assetService.create(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.url(), keyframe.url());
+            publish(run.runId, "asset.created", Map.of("asset", keyframeAsset));
+            output.put("assetId", keyframeAsset.id());
+            output.put("url", keyframeAsset.url());
+            output.put("thumbnailUrl", keyframeAsset.thumbnailUrl());
+            output.put("imageGenerationStatus", "success");
+            output.putAll(keyframe.metadata());
+        } catch (RuntimeException ex) {
+            output.putIfAbsent("thumbnailUrl", stringValue(visualOutput.output(), "thumbnailUrl", ""));
+            output.put("imageGenerationStatus", "skipped");
+            output.put("imageGenerationError", ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+        }
+        return output;
     }
 
     private void failVideoTask(MutableAgentRun run, TaskResponse task, CanvasNodeResponse videoNode, String error) {

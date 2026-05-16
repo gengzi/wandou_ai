@@ -18,11 +18,15 @@ public class ImageGenerationService {
     private final ModelConfigService modelConfigService;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
+    private final QWaveTaskClient qWaveTaskClient;
+    private final QingyunTaskClient qingyunTaskClient;
 
-    public ImageGenerationService(ModelConfigService modelConfigService, RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
+    public ImageGenerationService(ModelConfigService modelConfigService, RestClient.Builder restClientBuilder, ObjectMapper objectMapper, QWaveTaskClient qWaveTaskClient, QingyunTaskClient qingyunTaskClient) {
         this.modelConfigService = modelConfigService;
         this.restClientBuilder = restClientBuilder;
         this.objectMapper = objectMapper;
+        this.qWaveTaskClient = qWaveTaskClient;
+        this.qingyunTaskClient = qingyunTaskClient;
     }
 
     public ImageResult generate(String userId, String prompt) {
@@ -42,6 +46,12 @@ public class ImageGenerationService {
                             "modelDisplayName", config.displayName()
                     )
             );
+        }
+        if ("qwave-task".equals(config.compatibilityMode())) {
+            return generateWithQWaveTask(config, prompt);
+        }
+        if ("qingyun-task".equals(config.compatibilityMode())) {
+            return generateWithQingyunTask(config, prompt);
         }
         try {
             String response = restClientBuilder.clone()
@@ -85,6 +95,57 @@ public class ImageGenerationService {
             return "https://api.openai.com";
         }
         return baseUrl.replaceAll("/+$", "");
+    }
+
+    private ImageResult generateWithQWaveTask(ModelConfigEntity config, String prompt) {
+        try {
+            QWaveTaskClient.TaskResult task = qWaveTaskClient.submitAndWait(config, Map.of(
+                    "model", config.modelName(),
+                    "prompt", prompt,
+                    "aspect_ratio", "16:9",
+                    "n", 1
+            ));
+            String url = task.urls().stream()
+                    .filter(item -> item.matches("(?i).+\\.(png|jpg|jpeg|webp)(\\?.*)?$"))
+                    .findFirst()
+                    .orElseGet(() -> task.urls().isEmpty() ? "" : task.urls().get(0));
+            if (url.isBlank()) {
+                throw new IllegalStateException("任务完成但未返回图片 URL。");
+            }
+            return new ImageResult(url, null, "", "", Map.of(
+                    "modelSource", "configured-image-model",
+                    "modelProvider", config.provider(),
+                    "modelName", config.modelName(),
+                    "modelDisplayName", config.displayName(),
+                    "compatibilityMode", config.compatibilityMode(),
+                    "providerJobId", task.taskId()
+            ));
+        } catch (Exception ex) {
+            throw new IllegalStateException("任务式生图模型调用失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()), ex);
+        }
+    }
+
+    private ImageResult generateWithQingyunTask(ModelConfigEntity config, String prompt) {
+        try {
+            QingyunTaskClient.TaskResult task = qingyunTaskClient.generateImage(config, prompt);
+            String url = task.urls().stream()
+                    .filter(item -> item.matches("(?i).+\\.(png|jpg|jpeg|webp)(\\?.*)?$"))
+                    .findFirst()
+                    .orElseGet(() -> task.urls().isEmpty() ? "" : task.urls().get(0));
+            if (url.isBlank()) {
+                throw new IllegalStateException("青云图片任务完成但未返回图片 URL。");
+            }
+            return new ImageResult(url, null, "", "", Map.of(
+                    "modelSource", "configured-image-model",
+                    "modelProvider", config.provider(),
+                    "modelName", config.modelName(),
+                    "modelDisplayName", config.displayName(),
+                    "compatibilityMode", config.compatibilityMode(),
+                    "providerJobId", task.taskId()
+            ));
+        } catch (Exception ex) {
+            throw new IllegalStateException("青云任务式生图模型调用失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()), ex);
+        }
     }
 
     public record ImageResult(

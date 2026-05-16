@@ -45,6 +45,7 @@ public class ModelConfigService {
                 request.displayName(),
                 request.baseUrl(),
                 request.modelName(),
+                normalizeCompatibilityMode(request.compatibilityMode()),
                 blankToNull(request.apiKey()),
                 request.enabled() == null || request.enabled(),
                 now,
@@ -63,6 +64,7 @@ public class ModelConfigService {
                 request.displayName(),
                 request.baseUrl(),
                 request.modelName(),
+                normalizeCompatibilityMode(request.compatibilityMode()),
                 blankToNull(request.apiKey()),
                 request.enabled() == null || request.enabled(),
                 Instant.now()
@@ -85,6 +87,7 @@ public class ModelConfigService {
                 entity.displayName(),
                 entity.baseUrl(),
                 entity.modelName(),
+                entity.compatibilityMode(),
                 preview(entity.apiKeySecret()),
                 entity.enabled(),
                 entity.createdAt(),
@@ -104,6 +107,10 @@ public class ModelConfigService {
 
     private String normalizeProvider(String provider) {
         return provider == null || provider.isBlank() ? "openai-compatible" : provider.trim();
+    }
+
+    private String normalizeCompatibilityMode(String compatibilityMode) {
+        return compatibilityMode == null || compatibilityMode.isBlank() ? "openai" : compatibilityMode.trim();
     }
 
     private String blankToNull(String value) {
