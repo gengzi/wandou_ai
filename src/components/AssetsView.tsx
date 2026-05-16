@@ -11,10 +11,10 @@ const assetTabs = [
 ];
 
 const folderPalettes = [
-  { tab: '#7bd9ae', back: 'rgba(123,217,174,0.20)', front: 'rgba(122, 224, 177, 0.62)', glow: 'rgba(123,217,174,0.24)' },
-  { tab: '#88d9ff', back: 'rgba(136,217,255,0.18)', front: 'rgba(140, 220, 255, 0.58)', glow: 'rgba(136,217,255,0.22)' },
-  { tab: '#9b7cff', back: 'rgba(155,124,255,0.20)', front: 'rgba(157, 126, 245, 0.64)', glow: 'rgba(155,124,255,0.26)' },
-  { tab: '#f4b86a', back: 'rgba(244,184,106,0.18)', front: 'rgba(248, 196, 122, 0.55)', glow: 'rgba(244,184,106,0.22)' },
+  { tab: '#8adfb2', back: 'rgba(138,223,178,0.16)', front: 'rgba(138,223,178,0.42)', lip: 'rgba(255,255,255,0.22)', glow: 'rgba(138,223,178,0.22)' },
+  { tab: '#91d9ff', back: 'rgba(145,217,255,0.15)', front: 'rgba(145,217,255,0.40)', lip: 'rgba(255,255,255,0.23)', glow: 'rgba(145,217,255,0.20)' },
+  { tab: '#9f82ff', back: 'rgba(159,130,255,0.17)', front: 'rgba(159,130,255,0.44)', lip: 'rgba(255,255,255,0.22)', glow: 'rgba(159,130,255,0.24)' },
+  { tab: '#f1bf76', back: 'rgba(241,191,118,0.14)', front: 'rgba(241,191,118,0.36)', lip: 'rgba(255,255,255,0.20)', glow: 'rgba(241,191,118,0.20)' },
 ];
 
 interface ProjectFolderCardProps {
@@ -35,43 +35,43 @@ const ProjectFolderCard: React.FC<ProjectFolderCardProps> = ({
   onClick,
 }) => {
   return (
-    <button onClick={onClick} className="group flex w-[260px] shrink-0 flex-col items-center text-center">
-      <div className="relative h-[170px] w-[246px] transition-transform duration-300 group-hover:-translate-y-1">
+    <button onClick={onClick} className="group flex w-[232px] shrink-0 flex-col items-center text-center">
+      <div className="relative h-[142px] w-[224px] transition-transform duration-300 group-hover:-translate-y-1">
         <div
-          className="absolute left-6 top-2 h-[124px] w-[190px] rounded-[16px] border backdrop-blur-xl"
+          className="absolute left-4 top-3 h-[84px] w-[190px] rounded-[14px] border backdrop-blur-xl"
           style={{
             borderColor: palette.tab,
             background: palette.back,
-            boxShadow: active ? `0 22px 70px ${palette.glow}` : `0 16px 45px ${palette.glow}`,
+            boxShadow: active ? `0 18px 60px ${palette.glow}` : `0 14px 42px ${palette.glow}`,
           }}
         />
         <div
-          className="absolute left-34 top-2 h-7 w-24 rounded-t-[14px] border border-b-0"
+          className="absolute left-[118px] top-3 h-7 w-[76px] rounded-t-[14px] border border-b-0 backdrop-blur-xl"
           style={{ borderColor: palette.tab, background: palette.back }}
         />
-        <div className="absolute left-12 top-40 h-[92px] w-[154px] rounded-[12px] border border-white/45 bg-white/60 shadow-[0_18px_45px_rgba(0,0,0,0.16)] backdrop-blur-md" />
-        <div className="absolute left-4 top-[54px] h-[106px] w-[220px] rounded-[15px] border border-white/35 bg-white/25 shadow-[0_20px_50px_rgba(0,0,0,0.20)] backdrop-blur-xl" />
+        <div className="absolute left-[58px] top-[36px] h-[72px] w-[118px] rounded-[12px] border border-white/45 bg-white/55 shadow-[0_16px_36px_rgba(0,0,0,0.15)] backdrop-blur-md" />
+        <div className="absolute left-5 top-[48px] h-[74px] w-[190px] rounded-[14px] border border-white/30 bg-white/15 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl" />
         {previews.slice(0, 2).map((preview, index) => (
           <img
             key={`${title}-${preview}-${index}`}
             src={preview}
             alt=""
-            className={`absolute rounded-xl border border-white/50 object-cover shadow-lg ${index === 0 ? 'right-14 top-8 h-16 w-20' : 'right-8 top-14 h-20 w-24 blur-[1px] opacity-75'}`}
+            className={`absolute rounded-xl border border-white/50 object-cover shadow-lg ${index === 0 ? 'right-12 top-[26px] h-12 w-16' : 'right-7 top-[46px] h-14 w-[70px] blur-[1px] opacity-75'}`}
           />
         ))}
         <div
-          className={`absolute left-2 top-[54px] h-[112px] w-[226px] overflow-hidden rounded-[15px] border border-white/25 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/45' : ''}`}
-          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.45), 0 18px 45px ${palette.glow}` }}
+          className={`absolute left-1 top-[50px] h-[76px] w-[218px] overflow-hidden rounded-[15px] border border-white/25 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/45' : ''}`}
+          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.44), 0 16px 42px ${palette.glow}` }}
         >
-          <div className="absolute inset-x-0 top-0 h-8 bg-white/18" />
-          <div className="absolute bottom-7 left-6 text-xl font-black text-white drop-shadow">{title.slice(0, 14)}</div>
+          <div className="absolute inset-x-0 top-0 h-7" style={{ background: palette.lip }} />
+          <div className="absolute bottom-5 left-7 max-w-[154px] truncate text-lg font-black text-white drop-shadow">{title}</div>
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-center gap-2">
-        <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-slate-400">默认</span>
-        <span className="max-w-[160px] truncate text-base font-bold text-slate-100">{title}</span>
+      <div className="flex items-center justify-center gap-2">
+        <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-slate-500">默认</span>
+        <span className="max-w-[148px] truncate text-base font-bold text-slate-100">{title}</span>
       </div>
-      <div className="mt-3 text-sm text-slate-500">{count}个素材</div>
+      <div className="mt-2 text-sm text-slate-500">{count}个素材</div>
     </button>
   );
 };
@@ -252,20 +252,21 @@ export default function AssetsView() {
           </div>
         </header>
 
-        <section className="mb-8 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] px-6 py-7">
-          <div className="flex gap-8 overflow-x-auto pb-2">
-            <button onClick={openCreateForm} className="group flex w-[230px] shrink-0 flex-col items-center text-center">
-              <div className="relative h-[170px] w-[220px] rounded-[20px] bg-slate-800/70 shadow-[0_18px_45px_rgba(0,0,0,0.22)] transition-transform duration-300 group-hover:-translate-y-1">
-                <div className="absolute left-0 top-4 h-[136px] w-[220px] rounded-[20px] bg-slate-700/80" />
-                <div className="absolute left-24 top-0 h-8 w-72 rounded-t-[18px] bg-slate-700/80" />
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-slate-400">
-                  <Plus size={34} />
-                  <div className="text-sm font-semibold leading-6">
-                    点击新建或拖拽本地<br />文件夹到这里
+        <section className="mb-8 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.012))] px-6 py-7">
+          <div className="flex items-start gap-8 overflow-x-auto pb-2">
+            <button onClick={openCreateForm} className="group flex w-[210px] shrink-0 flex-col items-center text-center">
+              <div className="relative h-[142px] w-[196px] transition-transform duration-300 group-hover:-translate-y-1">
+                <div className="absolute left-0 top-2 h-[96px] w-[176px] rounded-[18px] bg-slate-800/70 shadow-[0_18px_45px_rgba(0,0,0,0.22)]" />
+                <div className="absolute left-[86px] top-0 h-8 w-[76px] rounded-t-[16px] bg-slate-800/70" />
+                <div className="absolute inset-x-0 top-[20px] h-[96px] rounded-[18px] border border-white/10 bg-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" />
+                <div className="absolute inset-x-4 top-[36px] flex h-[68px] flex-col items-center justify-center gap-2 rounded-2xl bg-slate-700/55 text-slate-400">
+                  <Plus size={24} />
+                  <div className="text-sm font-semibold leading-5">
+                    点击新建或拖拽<br />文件夹到这里
                   </div>
                 </div>
               </div>
-              <div className="mt-5 text-sm text-slate-500">新建项目素材</div>
+              <div className="text-sm text-slate-500">新建项目素材</div>
             </button>
 
             <ProjectFolderCard
@@ -408,7 +409,7 @@ export default function AssetsView() {
               )) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
-                    {visibleAssets.length === 0 ? '当前项目暂无素材。Agent Run 生成或手动登记的素材会出现在这里。' : '没有匹配当前搜索和类型筛选的素材。'}
+                    {visibleAssets.length === 0 ? '当前项目暂无素材。智能体流程生成或手动登记的素材会出现在这里。' : '没有匹配当前搜索和类型筛选的素材。'}
                   </td>
                 </tr>
               )}

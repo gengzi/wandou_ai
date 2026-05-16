@@ -16,7 +16,7 @@ const emptyForm = {
   id: '',
   capability: 'text' as Capability,
   provider: 'openai-compatible',
-  displayName: 'OpenAI Compatible',
+  displayName: '兼容接口',
   baseUrl: 'https://api.openai.com/v1',
   modelName: '',
   compatibilityMode: 'openai' as CompatibilityMode,
@@ -68,7 +68,7 @@ export default function ModelSettingsView() {
 
   const saveConfig = async () => {
     if (!form.modelName.trim() || !form.baseUrl.trim() || !form.displayName.trim()) {
-      setError('请填写显示名称、Base URL 和模型名称。');
+      setError('请填写显示名称、接口地址和模型名称。');
       return;
     }
     setSaving(true);

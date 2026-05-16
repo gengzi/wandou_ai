@@ -401,6 +401,20 @@ export async function updateCanvasNodeOutput(
   });
 }
 
+export async function createCanvasNode(canvasId: string, payload: {
+  type: string;
+  title: string;
+  status?: string;
+  position?: CanvasPosition;
+  data?: Record<string, unknown>;
+}): Promise<CanvasNodeResponse> {
+  return requestJson<CanvasNodeResponse>(`/api/canvas/${canvasId}/nodes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createCanvasEdge(canvasId: string, payload: { source: string; target: string }): Promise<CanvasEdgeResponse> {
   return requestJson<CanvasEdgeResponse>(`/api/canvas/${canvasId}/edges`, {
     method: 'POST',
@@ -442,6 +456,27 @@ export async function createAsset(payload: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function uploadAsset(payload: {
+  projectId?: string;
+  canvasId?: string;
+  nodeId?: string;
+  type?: string;
+  name?: string;
+  file: File;
+}): Promise<AssetResponse> {
+  const formData = new FormData();
+  formData.set('file', payload.file);
+  if (payload.projectId) formData.set('projectId', payload.projectId);
+  if (payload.canvasId) formData.set('canvasId', payload.canvasId);
+  if (payload.nodeId) formData.set('nodeId', payload.nodeId);
+  if (payload.type) formData.set('type', payload.type);
+  if (payload.name) formData.set('name', payload.name);
+  return requestJson<AssetResponse>('/api/assets/upload', {
+    method: 'POST',
+    body: formData,
   });
 }
 

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -39,6 +40,19 @@ public class AssetController {
     @SaCheckPermission("asset:write")
     public ApiResponse<AssetResponse> create(@Valid @RequestBody AssetCreateRequest request) {
         return ApiResponse.ok(assetService.create(request));
+    }
+
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @SaCheckPermission("asset:write")
+    public ApiResponse<AssetResponse> upload(
+            @RequestParam(required = false) String projectId,
+            @RequestParam(required = false) String canvasId,
+            @RequestParam(required = false) String nodeId,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String name,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ApiResponse.ok(assetService.upload(projectId, canvasId, nodeId, type, name, file));
     }
 
     @GetMapping("/{assetId}")

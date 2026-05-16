@@ -8,7 +8,9 @@ import com.wandou.ai.storage.StoredObjectMetadata;
 import com.wandou.ai.storage.VideoStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -128,6 +130,42 @@ public class AssetService {
         return toResponse(assetRepository.save(asset));
     }
 
+    @Transactional
+    public AssetResponse upload(
+            String projectId,
+            String canvasId,
+            String nodeId,
+            String type,
+            String name,
+            MultipartFile file
+    ) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("上传文件不能为空");
+        }
+        String contentType = file.getContentType() == null || file.getContentType().isBlank()
+                ? "application/octet-stream"
+                : file.getContentType();
+        String safeType = normalize(type).isBlank() ? typeFromContentType(contentType) : normalize(type);
+        String originalName = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
+                ? safeType + "-asset"
+                : file.getOriginalFilename();
+        String assetName = normalize(name).isBlank() ? originalName : normalize(name);
+        try {
+            return createStoredAsset(
+                    normalize(projectId),
+                    normalize(canvasId),
+                    normalize(nodeId),
+                    safeType,
+                    assetName,
+                    file.getBytes(),
+                    contentType,
+                    extension(originalName, contentType)
+            );
+        } catch (IOException error) {
+            throw new IllegalStateException("读取上传文件失败", error);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<AssetResponse> list(String projectId) {
         List<AssetEntity> assets = projectId == null || projectId.isBlank()
@@ -185,6 +223,31 @@ public class AssetService {
 
     private String normalize(String value) {
         return value == null ? "" : value;
+    }
+
+    private String typeFromContentType(String contentType) {
+        if (contentType.startsWith("image/")) {
+            return "image";
+        }
+        if (contentType.startsWith("video/")) {
+            return "video";
+        }
+        if (contentType.startsWith("audio/")) {
+            return "audio";
+        }
+        return "asset";
+    }
+
+    private String extension(String filename, String contentType) {
+        int dot = filename.lastIndexOf('.');
+        if (dot >= 0 && dot + 1 < filename.length()) {
+            return filename.substring(dot + 1);
+        }
+        if ("image/png".equalsIgnoreCase(contentType)) return "png";
+        if ("image/jpeg".equalsIgnoreCase(contentType)) return "jpg";
+        if ("image/webp".equalsIgnoreCase(contentType)) return "webp";
+        if ("video/mp4".equalsIgnoreCase(contentType)) return "mp4";
+        return "bin";
     }
 
     private AssetResponse toResponse(AssetEntity asset) {

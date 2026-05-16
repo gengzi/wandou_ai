@@ -3,6 +3,7 @@ package com.wandou.ai.canvas;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.canvas.dto.CanvasEdgeCreateRequest;
 import com.wandou.ai.canvas.dto.CanvasEdgeResponse;
+import com.wandou.ai.canvas.dto.CanvasNodeCreateRequest;
 import com.wandou.ai.canvas.dto.CanvasNodeOutputUpdateRequest;
 import com.wandou.ai.canvas.dto.CanvasNodePositionUpdateRequest;
 import com.wandou.ai.canvas.dto.CanvasNodeResponse;
@@ -54,6 +55,22 @@ public class CanvasController {
             @Valid @RequestBody CanvasNodeOutputUpdateRequest request
     ) {
         return ApiResponse.ok(canvasService.mergeNodeOutput(canvasId, nodeId, request.status(), request.output()));
+    }
+
+    @PostMapping("/{canvasId}/nodes")
+    @SaCheckPermission("canvas:write")
+    public ApiResponse<CanvasNodeResponse> addNode(
+            @PathVariable String canvasId,
+            @Valid @RequestBody CanvasNodeCreateRequest request
+    ) {
+        return ApiResponse.ok(canvasService.addNode(
+                canvasId,
+                request.type(),
+                request.title(),
+                request.status() == null || request.status().isBlank() ? "idle" : request.status(),
+                request.position(),
+                request.data()
+        ));
     }
 
     @PostMapping("/{canvasId}/edges")

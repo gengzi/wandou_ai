@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export type Locale = 'zh-CN' | 'en-US';
 
@@ -17,6 +17,13 @@ const messages = {
     'nav.settings': '模型设置',
     'nav.logout': '退出登录',
     'nav.backHome': '返回首页',
+    'login.title': '豌豆 AI',
+    'login.subtitle': '企业工作台登录',
+    'login.email': '邮箱',
+    'login.password': '密码',
+    'login.submit': '登录',
+    'login.loading': '登录中...',
+    'login.failed': '登录失败',
     'badge.pro': '专业版',
     'badge.free': '免费',
     'home.bannerTitle': '豌豆智能创作台',
@@ -28,7 +35,7 @@ const messages = {
     'home.languageNotice': '界面已切换为简体中文。',
     'home.faqNotice': '常见问题中心尚未接入。当前可以直接从首页输入创作指令开始验证链路。',
     'home.joinNotice': '加入已有项目需要邀请码/协作入口，当前请从最近项目列表打开已有项目。',
-    'home.agentReady': '导演 Agent 待命',
+    'home.agentReady': '导演智能体待命',
     'home.promptPlaceholder': '输入你的短片想法，例如：少女抱着机器猫站在空间站窗前，窗外是星云，生成剧本、角色、分镜和视频任务...',
     'home.addAttachment': '添加附件',
     'home.referenceImage': '参考图',
@@ -50,7 +57,7 @@ const messages = {
     'home.quick.canvas': '自由画布',
     'home.quick.character': '角色设定',
     'home.quick.storyboard': '分镜生成',
-    'home.highlight.agent.title': 'Agent 编排',
+    'home.highlight.agent.title': '智能体编排',
     'home.highlight.agent.desc': '导演、剧本、分镜和视频任务会同步到会话、任务队列与画布节点。',
     'home.highlight.assets.title': '画布式资产流',
     'home.highlight.assets.desc': '每一次生成都会沉淀为可追踪节点，素材、任务和会话保持同一个上下文。',
@@ -67,6 +74,13 @@ const messages = {
     'nav.settings': 'Model Settings',
     'nav.logout': 'Log out',
     'nav.backHome': 'Back home',
+    'login.title': 'Wandou AI',
+    'login.subtitle': 'Enterprise workspace login',
+    'login.email': 'Email',
+    'login.password': 'Password',
+    'login.submit': 'Log in',
+    'login.loading': 'Logging in...',
+    'login.failed': 'Login failed',
     'badge.pro': 'PRO',
     'badge.free': 'Free',
     'home.bannerTitle': 'Wandou Agent Studio',
@@ -119,6 +133,9 @@ interface I18nContextValue {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 function initialLocale(): Locale {
+  if (typeof localStorage === 'undefined') {
+    return 'zh-CN';
+  }
   const saved = localStorage.getItem(LANGUAGE_KEY);
   return saved === 'en-US' ? 'en-US' : 'zh-CN';
 }
@@ -126,9 +143,15 @@ function initialLocale(): Locale {
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   const value = useMemo<I18nContextValue>(() => {
     const setLocale = (nextLocale: Locale) => {
-      localStorage.setItem(LANGUAGE_KEY, nextLocale);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LANGUAGE_KEY, nextLocale);
+      }
       setLocaleState(nextLocale);
       document.documentElement.lang = nextLocale;
     };
