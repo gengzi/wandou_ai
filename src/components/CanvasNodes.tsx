@@ -1,12 +1,30 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music, Clapperboard, CheckCircle2 } from 'lucide-react';
+import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music, Clapperboard, CheckCircle2, Pencil } from 'lucide-react';
 import { getAuthToken } from '../lib/api';
 
 const getString = (...values: unknown[]) => {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
       return value;
+    }
+  }
+  return '';
+};
+
+const getDisplayText = (...values: unknown[]) => {
+  const text = getString(...values);
+  if (text) return text;
+  for (const value of values) {
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (value && typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return '';
+      }
     }
   }
   return '';
@@ -57,8 +75,8 @@ const emitNodeAction = (action: string, nodeId: string, data: any, extra: Record
 export const ScriptNode = ({ id, data }: any) => {
   const title = data?.title || '智能剧本生成';
   const status = data?.status || 'idle';
-  const summary = data?.output?.summary || '等待 Agent Run 生成剧本摘要。';
-  const style = data?.output?.style;
+  const summary = getDisplayText(data?.output?.summary, '等待 Agent Run 生成剧本摘要。');
+  const style = getDisplayText(data?.output?.style);
   const modelSource = getString(data?.output?.modelSource);
   const modelLabel = modelSource === 'configured-text-model'
     ? getString(data?.output?.modelDisplayName, data?.output?.modelName, '已配置文本模型')
@@ -79,6 +97,9 @@ export const ScriptNode = ({ id, data }: any) => {
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => emitNodeAction('edit-script', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="编辑剧本">
+            <Pencil size={14} />
+          </button>
           <button onClick={() => emitNodeAction('quote', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
             <CopyPlus size={14} />
           </button>
@@ -225,15 +246,15 @@ export const StoryboardNode = ({ id, data }: any) => {
       </div>
       <div className="p-4 space-y-3">
         {scenes.length > 0 ? scenes.map((scene: any) => (
-          <div key={scene.shot} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3">
+          <div key={getDisplayText(scene.shot, scene.id, scene.content)} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3">
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-brand">Shot {scene.shot}</span>
-              <span className="text-[10px] text-slate-500">{scene.duration}</span>
+              <span className="text-[11px] font-bold text-brand">Shot {getDisplayText(scene.shot, scene.title, '镜头')}</span>
+              <span className="text-[10px] text-slate-500">{getDisplayText(scene.duration)}</span>
             </div>
-            <p className="text-[12px] leading-5 text-slate-300">{scene.content}</p>
+            <p className="text-[12px] leading-5 text-slate-300">{getDisplayText(scene.content, scene.prompt, scene.description)}</p>
           </div>
         )) : <EmptyState>等待后端返回分镜结果。</EmptyState>}
-        {data?.output?.camera && <p className="text-[11px] text-slate-500">运镜：{data.output.camera}</p>}
+        {getDisplayText(data?.output?.camera) && <p className="text-[11px] text-slate-500">运镜：{getDisplayText(data?.output?.camera)}</p>}
       </div>
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
@@ -469,7 +490,7 @@ export const FinalVideoNode = ({ id, data }: any) => {
             </div>
           )}
         </div>
-        <p className="mt-3 text-[12px] leading-5 text-slate-300">{data?.output?.summary || '等待合成结果。'}</p>
+        <p className="mt-3 text-[12px] leading-5 text-slate-300">{getDisplayText(data?.output?.summary, '等待合成结果。')}</p>
       </div>
     </div>
   );

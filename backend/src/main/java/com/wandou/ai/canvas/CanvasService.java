@@ -1,46 +1,73 @@
 package com.wandou.ai.canvas;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wandou.ai.canvas.dto.CanvasEdgeResponse;
 import com.wandou.ai.canvas.dto.CanvasNodeResponse;
 import com.wandou.ai.canvas.dto.CanvasResponse;
 import com.wandou.ai.canvas.dto.PositionResponse;
 import com.wandou.ai.common.IdGenerator;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class CanvasService {
 
-    private final Map<String, MutableCanvas> canvases = new ConcurrentHashMap<>();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
+    private final CanvasNodeRepository nodeRepository;
+    private final CanvasEdgeRepository edgeRepository;
+    private final CanvasRepository canvasRepository;
+    private final ObjectMapper objectMapper;
+
+    public CanvasService(CanvasNodeRepository nodeRepository, CanvasEdgeRepository edgeRepository, CanvasRepository canvasRepository, ObjectMapper objectMapper) {
+        this.nodeRepository = nodeRepository;
+        this.edgeRepository = edgeRepository;
+        this.canvasRepository = canvasRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional
     public CanvasResponse createDefaultCanvas(String projectId) {
         String canvasId = IdGenerator.id("canvas_");
-        MutableCanvas canvas = new MutableCanvas(canvasId, projectId);
-        canvas.nodes.add(new CanvasNodeResponse(
+        Instant now = Instant.now();
+        canvasRepository.save(new CanvasEntity(canvasId, projectId, now, now));
+        nodeRepository.save(new CanvasNodeEntity(
+                entityId(canvasId, "script-1"),
+                canvasId,
+                projectId,
                 "script-1",
                 "script",
                 "智能剧本生成",
                 "idle",
-                new PositionResponse(80, 260),
-                Map.of("title", "智能剧本生成", "status", "idle"),
-                Map.of(),
-                Instant.now()
+                80,
+                260,
+                toJson(Map.of("title", "智能剧本生成", "status", "idle")),
+                toJson(Map.of()),
+                now,
+                now
         ));
-        canvases.put(canvasId, canvas);
-        return canvas.toResponse();
+        return requireCanvas(canvasId);
     }
 
     public Optional<CanvasResponse> get(String canvasId) {
-        MutableCanvas canvas = canvases.get(canvasId);
-        return canvas == null ? Optional.empty() : Optional.of(canvas.toResponse());
+        Optional<CanvasEntity> canvas = canvasRepository.findById(canvasId);
+        if (canvas.isEmpty()) {
+            return Optional.empty();
+        }
+        List<CanvasNodeEntity> nodes = nodeRepository.findByCanvasIdOrderByCreatedAtAsc(canvasId);
+        return Optional.of(toResponse(canvas.get(), nodes, edgeRepository.findByCanvasIdOrderByCreatedAtAsc(canvasId)));
     }
 
+    @Transactional
     public CanvasNodeResponse addNode(
             String canvasId,
             String type,
@@ -49,138 +76,186 @@ public class CanvasService {
             PositionResponse position,
             Map<String, Object> data
     ) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        CanvasNodeResponse node = new CanvasNodeResponse(
-                IdGenerator.id("node_" + type + "_"),
+        String projectId = requireProjectId(canvasId);
+        String nodeId = IdGenerator.id("node_" + type + "_");
+        Instant now = Instant.now();
+        CanvasNodeEntity node = nodeRepository.save(new CanvasNodeEntity(
+                entityId(canvasId, nodeId),
+                canvasId,
+                projectId,
+                nodeId,
                 type,
                 title,
                 status,
-                position,
-                data,
-                Map.of(),
+                position.x(),
+                position.y(),
+                toJson(data),
+                toJson(Map.of()),
+                now,
+                now
+        ));
+        touchCanvas(canvasId, now);
+        return toNodeResponse(node);
+    }
+
+    @Transactional
+    public CanvasNodeResponse updateNode(String canvasId, String nodeId, String status, Map<String, Object> output) {
+        CanvasNodeEntity node = requireNode(canvasId, nodeId);
+        node.update(
+                status,
+                node.positionX(),
+                node.positionY(),
+                node.dataJson(),
+                toJson(output),
                 Instant.now()
         );
-        synchronized (canvas) {
-            canvas.nodes.add(node);
-            canvas.updatedAt = Instant.now();
-        }
-        return node;
+        CanvasNodeEntity savedNode = nodeRepository.save(node);
+        touchCanvas(canvasId, savedNode.updatedAt());
+        return toNodeResponse(savedNode);
     }
 
-    public CanvasNodeResponse updateNode(String canvasId, String nodeId, String status, Map<String, Object> output) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        synchronized (canvas) {
-            for (int index = 0; index < canvas.nodes.size(); index++) {
-                CanvasNodeResponse node = canvas.nodes.get(index);
-                if (node.id().equals(nodeId)) {
-                    CanvasNodeResponse updated = new CanvasNodeResponse(
-                            node.id(),
-                            node.type(),
-                            node.title(),
-                            status,
-                            node.position(),
-                            node.data(),
-                            output,
-                            Instant.now()
-                    );
-                    canvas.nodes.set(index, updated);
-                    canvas.updatedAt = Instant.now();
-                    return updated;
-                }
-            }
-        }
-        throw new IllegalArgumentException("canvas node not found: " + nodeId);
+    @Transactional
+    public CanvasNodeResponse mergeNodeOutput(String canvasId, String nodeId, String status, Map<String, Object> output) {
+        CanvasNodeEntity node = requireNode(canvasId, nodeId);
+        Map<String, Object> mergedOutput = new LinkedHashMap<>(fromJson(node.outputJson()));
+        mergedOutput.putAll(output);
+        node.update(
+                status == null || status.isBlank() ? node.status() : status,
+                node.positionX(),
+                node.positionY(),
+                node.dataJson(),
+                toJson(mergedOutput),
+                Instant.now()
+        );
+        CanvasNodeEntity savedNode = nodeRepository.save(node);
+        touchCanvas(canvasId, savedNode.updatedAt());
+        return toNodeResponse(savedNode);
     }
 
+    @Transactional
     public CanvasNodeResponse updateNodePosition(String canvasId, String nodeId, PositionResponse position) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        synchronized (canvas) {
-            for (int index = 0; index < canvas.nodes.size(); index++) {
-                CanvasNodeResponse node = canvas.nodes.get(index);
-                if (node.id().equals(nodeId)) {
-                    CanvasNodeResponse updated = new CanvasNodeResponse(
-                            node.id(),
-                            node.type(),
-                            node.title(),
-                            node.status(),
-                            position,
-                            node.data(),
-                            node.output(),
-                            Instant.now()
-                    );
-                    canvas.nodes.set(index, updated);
-                    canvas.updatedAt = Instant.now();
-                    return updated;
-                }
-            }
-        }
-        throw new IllegalArgumentException("canvas node not found: " + nodeId);
+        CanvasNodeEntity node = requireNode(canvasId, nodeId);
+        node.update(
+                node.status(),
+                position.x(),
+                position.y(),
+                node.dataJson(),
+                node.outputJson(),
+                Instant.now()
+        );
+        CanvasNodeEntity savedNode = nodeRepository.save(node);
+        touchCanvas(canvasId, savedNode.updatedAt());
+        return toNodeResponse(savedNode);
     }
 
+    @Transactional
     public CanvasEdgeResponse addEdge(String canvasId, String source, String target) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        synchronized (canvas) {
-            for (CanvasEdgeResponse edge : canvas.edges) {
-                if (edge.source().equals(source) && edge.target().equals(target)) {
-                    return edge;
-                }
-            }
-            CanvasEdgeResponse edge = new CanvasEdgeResponse(
-                    IdGenerator.id("edge_"),
-                    source,
-                    target
-            );
-            canvas.edges.add(edge);
-            canvas.updatedAt = Instant.now();
-            return edge;
+        Optional<CanvasEdgeEntity> existing = edgeRepository.findByCanvasIdAndSourceNodeIdAndTargetNodeId(canvasId, source, target);
+        if (existing.isPresent()) {
+            return toEdgeResponse(existing.get());
         }
+        String projectId = requireProjectId(canvasId);
+        CanvasEdgeEntity edge = edgeRepository.save(new CanvasEdgeEntity(
+                IdGenerator.id("edge_"),
+                canvasId,
+                projectId,
+                source,
+                target,
+                Instant.now()
+        ));
+        touchCanvas(canvasId, edge.createdAt());
+        return toEdgeResponse(edge);
     }
 
+    @Transactional
     public void deleteNode(String canvasId, String nodeId) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        synchronized (canvas) {
-            boolean removed = canvas.nodes.removeIf(node -> node.id().equals(nodeId));
-            if (!removed) {
-                throw new IllegalArgumentException("canvas node not found: " + nodeId);
-            }
-            canvas.edges.removeIf(edge -> edge.source().equals(nodeId) || edge.target().equals(nodeId));
-            canvas.updatedAt = Instant.now();
-        }
+        CanvasNodeEntity node = requireNode(canvasId, nodeId);
+        List<CanvasEdgeEntity> incidentEdges = edgeRepository.findByCanvasIdOrderByCreatedAtAsc(canvasId).stream()
+                .filter(edge -> edge.sourceNodeId().equals(nodeId) || edge.targetNodeId().equals(nodeId))
+                .toList();
+        edgeRepository.deleteAll(incidentEdges);
+        nodeRepository.delete(node);
+        touchCanvas(canvasId, Instant.now());
     }
 
+    @Transactional
     public void deleteEdge(String canvasId, String edgeId) {
-        MutableCanvas canvas = requireCanvas(canvasId);
-        synchronized (canvas) {
-            boolean removed = canvas.edges.removeIf(edge -> edge.id().equals(edgeId));
-            if (!removed) {
-                throw new IllegalArgumentException("canvas edge not found: " + edgeId);
-            }
-            canvas.updatedAt = Instant.now();
+        CanvasEdgeEntity edge = edgeRepository.findById(edgeId)
+                .filter(candidate -> candidate.canvasId().equals(canvasId))
+                .orElseThrow(() -> new IllegalArgumentException("canvas edge not found: " + edgeId));
+        edgeRepository.delete(edge);
+        touchCanvas(canvasId, Instant.now());
+    }
+
+    private CanvasResponse requireCanvas(String canvasId) {
+        return get(canvasId).orElseThrow(() -> new IllegalArgumentException("canvas not found: " + canvasId));
+    }
+
+    private String requireProjectId(String canvasId) {
+        return get(canvasId)
+                .map(CanvasResponse::projectId)
+                .orElseThrow(() -> new IllegalArgumentException("canvas not found: " + canvasId));
+    }
+
+    private CanvasNodeEntity requireNode(String canvasId, String nodeId) {
+        return nodeRepository.findByCanvasIdAndNodeId(canvasId, nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("canvas node not found: " + nodeId));
+    }
+
+    private CanvasResponse toResponse(CanvasEntity canvas, List<CanvasNodeEntity> nodeEntities, List<CanvasEdgeEntity> edgeEntities) {
+        List<CanvasNodeResponse> nodes = nodeEntities.stream()
+                .map(this::toNodeResponse)
+                .toList();
+        List<CanvasEdgeResponse> edges = edgeEntities.stream()
+                .map(this::toEdgeResponse)
+                .toList();
+        return new CanvasResponse(canvas.id(), canvas.projectId(), nodes, edges, canvas.updatedAt());
+    }
+
+    private CanvasNodeResponse toNodeResponse(CanvasNodeEntity node) {
+        return new CanvasNodeResponse(
+                node.nodeId(),
+                node.type(),
+                node.title(),
+                node.status(),
+                new PositionResponse(node.positionX(), node.positionY()),
+                fromJson(node.dataJson()),
+                fromJson(node.outputJson()),
+                node.updatedAt()
+        );
+    }
+
+    private CanvasEdgeResponse toEdgeResponse(CanvasEdgeEntity edge) {
+        return new CanvasEdgeResponse(edge.id(), edge.sourceNodeId(), edge.targetNodeId());
+    }
+
+    private String entityId(String canvasId, String nodeId) {
+        return canvasId + ":" + nodeId;
+    }
+
+    private void touchCanvas(String canvasId, Instant updatedAt) {
+        CanvasEntity canvas = canvasRepository.findById(canvasId)
+                .orElseThrow(() -> new IllegalArgumentException("canvas not found: " + canvasId));
+        canvas.touch(updatedAt);
+        canvasRepository.save(canvas);
+    }
+
+    private String toJson(Map<String, Object> value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("failed to serialize canvas node data", ex);
         }
     }
 
-    private MutableCanvas requireCanvas(String canvasId) {
-        MutableCanvas canvas = canvases.get(canvasId);
-        if (canvas == null) {
-            throw new IllegalArgumentException("canvas not found: " + canvasId);
+    private Map<String, Object> fromJson(String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
         }
-        return canvas;
-    }
-
-    private static final class MutableCanvas {
-        private final String id;
-        private final String projectId;
-        private final List<CanvasNodeResponse> nodes = new ArrayList<>();
-        private final List<CanvasEdgeResponse> edges = new ArrayList<>();
-        private Instant updatedAt = Instant.now();
-
-        private MutableCanvas(String id, String projectId) {
-            this.id = id;
-            this.projectId = projectId;
-        }
-
-        private synchronized CanvasResponse toResponse() {
-            return new CanvasResponse(id, projectId, List.copyOf(nodes), List.copyOf(edges), updatedAt);
+        try {
+            return objectMapper.readValue(value, MAP_TYPE);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("failed to read canvas node data", ex);
         }
     }
 }

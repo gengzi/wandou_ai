@@ -118,10 +118,10 @@ export default function ModelSettingsView() {
       <div className="flex-1 overflow-y-auto p-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <div className="mb-2 text-xs font-bold uppercase tracking-[0.24em] text-brand">Model Settings</div>
+            <div className="mb-2 text-xs font-bold tracking-[0.24em] text-brand">模型设置</div>
             <h1 className="text-2xl font-bold text-white">模型配置</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-            每个用户维护自己的模型接入。优先使用 OpenAI-compatible 的 Base URL、API Key、模型名三件套，后续接 OpenAI、兼容网关或第三方适配器都走同一套配置。
+            每个用户维护自己的模型接入。优先使用兼容接口的地址、密钥、模型名三件套，后续接 OpenAI、兼容网关或第三方适配器都走同一套配置。
           </p>
           <p className="mt-2 text-xs text-yellow-200/80">
             当前版本只保存配置，不执行连接测试；保存后请通过工作区生成链路验证模型可用性。
@@ -179,14 +179,14 @@ export default function ModelSettingsView() {
                     <div className="mt-1 truncate text-xs text-slate-500">{config.modelName}</div>
                     <div className="mt-1 truncate text-[11px] text-slate-500">
                       {config.compatibilityMode === 'qingyun-task'
-                        ? 'Qingyun/Vidu Task API'
+                        ? '青云/Vidu 异步任务接口'
                         : config.compatibilityMode === 'qwave-task'
-                          ? 'QWave Task API'
-                          : 'OpenAI Compatible'}
+                          ? 'QWave 异步任务接口'
+                          : 'OpenAI 兼容接口'}
                     </div>
                     <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-500">
                       <KeyRound size={12} />
-                      <span>{config.apiKeyPreview || '未保存 Key'}</span>
+                      <span>{config.apiKeyPreview || '未保存密钥'}</span>
                     </div>
                   </button>
                 ))}
@@ -199,7 +199,7 @@ export default function ModelSettingsView() {
       <aside className="w-[380px] shrink-0 border-l border-white/10 bg-[#121213] p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-white">{form.id ? '编辑配置' : '新建配置'}</h2>
-          <p className="mt-1 text-xs text-slate-500">API Key 保存后只显示掩码；编辑时留空会保留原 Key。</p>
+          <p className="mt-1 text-xs text-slate-500">密钥保存后只显示掩码；编辑时留空会保留原密钥。</p>
         </div>
 
         <div className="space-y-4">
@@ -215,18 +215,18 @@ export default function ModelSettingsView() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-400">Provider</span>
+            <span className="mb-1 block text-xs font-semibold text-slate-400">服务商</span>
             <select
               value={form.provider}
               onChange={(event) => setForm({ ...form, provider: event.target.value })}
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
-              <option value="openai-compatible">OpenAI Compatible</option>
-              <option value="qingyun">Qingyun API</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="qingyun">青云接口</option>
               <option value="deepseek">DeepSeek</option>
               <option value="openai">OpenAI</option>
-              <option value="kling">Kling Adapter</option>
-              <option value="runway">Runway Adapter</option>
+              <option value="kling">可灵适配器</option>
+              <option value="runway">Runway 适配器</option>
             </select>
           </label>
 
@@ -241,7 +241,7 @@ export default function ModelSettingsView() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-400">Base URL</span>
+            <span className="mb-1 block text-xs font-semibold text-slate-400">接口地址</span>
             <input
               value={form.baseUrl}
               onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
@@ -257,12 +257,12 @@ export default function ModelSettingsView() {
               onChange={(event) => setForm({ ...form, compatibilityMode: event.target.value as CompatibilityMode })}
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
-              <option value="openai">OpenAI Compatible</option>
-              <option value="qingyun-task">Qingyun/Vidu Task API</option>
-              <option value="qwave-task">QWave Task API</option>
+              <option value="openai">OpenAI 兼容接口</option>
+              <option value="qingyun-task">青云/Vidu 异步任务接口</option>
+              <option value="qwave-task">QWave 异步任务接口</option>
             </select>
             <span className="mt-1 block text-[11px] leading-5 text-slate-500">
-              OpenAI 兼容模式使用聊天/生图同步接口；Qingyun/Vidu Task API 和 QWave Task API 用于异步任务式图片、视频模型。
+              OpenAI 兼容模式使用聊天/生图同步接口；青云/Vidu 和 QWave 用于异步任务式图片、视频模型。
             </span>
           </label>
 
@@ -277,12 +277,12 @@ export default function ModelSettingsView() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-400">API Key</span>
+            <span className="mb-1 block text-xs font-semibold text-slate-400">接口密钥</span>
             <input
               value={form.apiKey}
               onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
-              placeholder={form.id ? '留空则保持原 Key' : 'sk-...'}
+              placeholder={form.id ? '留空则保持原密钥' : 'sk-...'}
               type="password"
             />
           </label>

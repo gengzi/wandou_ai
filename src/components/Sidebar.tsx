@@ -1,6 +1,7 @@
 import React from 'react';
-import { FolderClosed, Home, LogOut, PenTool, Settings, Users } from 'lucide-react';
+import { FolderClosed, Home, Languages, LogOut, PenTool, Settings, Users, WalletCards } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useI18n } from '../lib/i18n';
 
 interface SidebarProps {
   currentView: string;
@@ -9,11 +10,13 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
+  const { t, toggleLocale } = useI18n();
   const items = [
-    { id: 'home', icon: Home, label: '首页' },
-    { id: 'workspace', icon: PenTool, label: 'AI创作', badge: 'PRO' },
-    { id: 'assets', icon: FolderClosed, label: '素材管理' },
-    { id: 'users', icon: Users, label: '用户管理' },
+    { id: 'home', icon: Home, label: t('nav.home') },
+    { id: 'workspace', icon: PenTool, label: t('nav.workspace'), badge: t('badge.pro') },
+    { id: 'assets', icon: FolderClosed, label: t('nav.assets') },
+    { id: 'usage', icon: WalletCards, label: t('nav.usage') },
+    { id: 'users', icon: Users, label: t('nav.users') },
   ];
 
   return (
@@ -23,8 +26,8 @@ export default function Sidebar({ currentView, onViewChange, onLogout }: Sidebar
           type="button"
           onClick={() => onViewChange('home')}
           className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center mb-2 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-          aria-label="返回首页"
-          title="返回首页"
+          aria-label={t('nav.backHome')}
+          title={t('nav.backHome')}
         >
           <span className="text-white font-black text-2xl tracking-tighter italic">W</span>
         </button>
@@ -40,6 +43,8 @@ export default function Sidebar({ currentView, onViewChange, onLogout }: Sidebar
                 ? 'bg-[#1A1A1C] text-brand border border-white/5' 
                 : 'text-slate-500 hover:text-slate-300'
             }`}
+            title={item.label}
+            aria-label={item.label}
           >
             <item.icon size={20} strokeWidth={1.5} />
             {item.badge && (
@@ -52,11 +57,24 @@ export default function Sidebar({ currentView, onViewChange, onLogout }: Sidebar
       </div>
 
       <div className="flex flex-col items-center space-y-4">
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={toggleLocale}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5"
+          title={t('language.switch')}
+          aria-label={t('language.switch')}
+        >
+          <Languages size={18} strokeWidth={1.5} />
+        </motion.button>
         <motion.div
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => onViewChange('settings')}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5"
+          title={t('nav.settings')}
+          aria-label={t('nav.settings')}
         >
           <Settings size={18} strokeWidth={1.5} />
         </motion.div>
@@ -66,8 +84,8 @@ export default function Sidebar({ currentView, onViewChange, onLogout }: Sidebar
           whileTap={{ scale: 0.95 }}
           onClick={onLogout}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-red-200 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5 hover:border-red-500/30 hover:bg-red-500/10"
-          title="退出登录"
-          aria-label="退出登录"
+          title={t('nav.logout')}
+          aria-label={t('nav.logout')}
         >
           <LogOut size={18} strokeWidth={1.5} />
         </motion.button>

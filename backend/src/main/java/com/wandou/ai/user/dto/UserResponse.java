@@ -10,6 +10,8 @@ public record UserResponse(
         List<String> roles,
         List<String> permissions,
         String status,
+        long usedCredits,
+        long remainingCredits,
         Instant createdAt,
         Instant lastLoginAt
 ) {

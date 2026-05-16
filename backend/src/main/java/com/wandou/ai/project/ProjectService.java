@@ -8,31 +8,31 @@ import com.wandou.ai.conversation.dto.ConversationResponse;
 import com.wandou.ai.project.dto.ProjectCreateRequest;
 import com.wandou.ai.project.dto.ProjectResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ProjectService {
 
+    private final ProjectRepository projectRepository;
     private final CanvasService canvasService;
     private final ConversationService conversationService;
-    private final Map<String, ProjectResponse> projects = new ConcurrentHashMap<>();
 
-    public ProjectService(CanvasService canvasService, ConversationService conversationService) {
+    public ProjectService(ProjectRepository projectRepository, CanvasService canvasService, ConversationService conversationService) {
+        this.projectRepository = projectRepository;
         this.canvasService = canvasService;
         this.conversationService = conversationService;
     }
 
+    @Transactional
     public ProjectResponse create(ProjectCreateRequest request) {
         String projectId = IdGenerator.id("proj_");
         CanvasResponse canvas = canvasService.createDefaultCanvas(projectId);
         ConversationResponse conversation = conversationService.create(projectId);
-        ProjectResponse response = new ProjectResponse(
+        ProjectEntity project = new ProjectEntity(
                 projectId,
                 request.name(),
                 request.description(),
@@ -41,17 +41,28 @@ public class ProjectService {
                 conversation.id(),
                 Instant.now()
         );
-        projects.put(projectId, response);
-        return response;
+        return toResponse(projectRepository.save(project));
     }
 
     public List<ProjectResponse> list() {
-        return projects.values().stream()
-                .sorted(Comparator.comparing(ProjectResponse::createdAt).reversed())
+        return projectRepository.findAllByOrderByCreatedAtDesc().stream()
+                .map(this::toResponse)
                 .toList();
     }
 
     public Optional<ProjectResponse> get(String projectId) {
-        return Optional.ofNullable(projects.get(projectId));
+        return projectRepository.findById(projectId).map(this::toResponse);
+    }
+
+    private ProjectResponse toResponse(ProjectEntity project) {
+        return new ProjectResponse(
+                project.id(),
+                project.name(),
+                project.description(),
+                project.aspectRatio(),
+                project.canvasId(),
+                project.conversationId(),
+                project.createdAt()
+        );
     }
 }

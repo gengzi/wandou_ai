@@ -26,10 +26,14 @@ public class QingyunTaskClient {
     }
 
     public TaskResult generateImage(ModelConfigEntity config, String prompt) {
+        return generateImage(config, prompt, List.of());
+    }
+
+    public TaskResult generateImage(ModelConfigEntity config, String prompt, List<String> referenceImageUrls) {
         return submitAndWait(config, "/ent/v2/reference2image", Map.of(
                 "model", config.modelName(),
                 "prompt", prompt,
-                "images", List.of(),
+                "images", referenceImageUrls == null ? List.of() : referenceImageUrls,
                 "aspect_ratio", "16:9",
                 "resolution", "1080p"
         ));
@@ -48,6 +52,10 @@ public class QingyunTaskClient {
     }
 
     public TaskResult submitAndWait(ModelConfigEntity config, String path, Map<String, Object> payload) {
+        return waitFor(config, submitTask(config, path, payload));
+    }
+
+    public String submitTask(ModelConfigEntity config, String path, Map<String, Object> payload) {
         String response = client(config)
                 .post()
                 .uri(path)
@@ -60,7 +68,7 @@ public class QingyunTaskClient {
         if (taskId.isBlank()) {
             throw new IllegalStateException("青云任务接口未返回 task_id。");
         }
-        return waitFor(config, taskId);
+        return taskId;
     }
 
     public TaskResult waitFor(ModelConfigEntity config, String taskId) {

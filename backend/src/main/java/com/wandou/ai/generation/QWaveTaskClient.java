@@ -26,6 +26,10 @@ public class QWaveTaskClient {
     }
 
     public TaskResult submitAndWait(ModelConfigEntity config, Map<String, Object> payload) {
+        return waitFor(config, submitTask(config, payload));
+    }
+
+    public String submitTask(ModelConfigEntity config, Map<String, Object> payload) {
         String response = client(config)
                 .post()
                 .uri("/v1/tasks")
@@ -38,7 +42,7 @@ public class QWaveTaskClient {
         if (taskId.isBlank()) {
             throw new IllegalStateException("任务接口未返回 task_id。");
         }
-        return waitFor(config, taskId);
+        return taskId;
     }
 
     public TaskResult waitFor(ModelConfigEntity config, String taskId) {

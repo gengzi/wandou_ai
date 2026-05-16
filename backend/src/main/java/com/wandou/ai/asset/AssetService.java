@@ -138,6 +138,15 @@ public class AssetService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<AssetResponse> listReferenceImages(String projectId, int limit) {
+        int safeLimit = limit <= 0 ? 6 : limit;
+        return list(projectId).stream()
+                .filter(asset -> "image".equalsIgnoreCase(asset.type()))
+                .limit(safeLimit)
+                .toList();
+    }
+
     @Transactional
     public AssetResponse create(AssetCreateRequest request) {
         return create(

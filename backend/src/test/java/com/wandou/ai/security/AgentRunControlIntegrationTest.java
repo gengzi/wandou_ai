@@ -69,6 +69,13 @@ class AgentRunControlIntegrationTest {
         assertThat(completed.path("monitor").path("steps").findValuesAsText("step")).contains("script", "export");
         assertThat(completed.path("monitor").path("designSignals").size()).isGreaterThan(0);
 
+        mockMvc.perform(get("/api/usage/me")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.usedCredits").value(org.hamcrest.Matchers.greaterThan(0)))
+                .andExpect(jsonPath("$.data.requestCount").value(org.hamcrest.Matchers.greaterThan(0)))
+                .andExpect(jsonPath("$.data.recentRecords[0].credits").value(org.hamcrest.Matchers.greaterThan(0)));
+
         mockMvc.perform(get("/api/tasks")
                         .header("Authorization", "Bearer " + token)
                         .param("projectId", project.path("id").asText()))
@@ -126,7 +133,7 @@ class AgentRunControlIntegrationTest {
     }
 
     @Test
-    void mockVideoProviderFailureMarksRunAndTaskFailed() throws Exception {
+    void mockVideoProviderFailureKeepsRunTraceable() throws Exception {
         String token = login();
         JsonNode project = createProject(token);
 
@@ -143,15 +150,18 @@ class AgentRunControlIntegrationTest {
         awaitStatus(token, runId, "waiting_confirmation");
         confirm(token, runId, "角色和分镜通过。");
 
-        JsonNode failed = awaitStatus(token, runId, "failed");
-        assertEvent(failed, "task.failed");
-        assertEvent(failed, "run.failed");
+        JsonNode completed = awaitStatus(token, runId, "success");
+        assertEvent(completed, "task.completed");
+        assertEvent(completed, "run.completed");
+        assertThat(completed.path("events").findValuesAsText("videoGenerationStatus")).contains("skipped");
+        assertThat(completed.path("events").findValuesAsText("videoGenerationError")).contains("mock video generation failed");
 
         mockMvc.perform(get("/api/tasks")
                         .header("Authorization", "Bearer " + token)
                         .param("projectId", project.path("id").asText()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].status").value("failed"));
+                .andExpect(jsonPath("$.data[0].status").value("success"))
+                .andExpect(jsonPath("$.data[0].message").value("视频模型暂不可用，已生成可追踪占位结果"));
     }
 
     @Test

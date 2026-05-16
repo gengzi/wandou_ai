@@ -27,7 +27,9 @@ export default function UsersView() {
 
   const roleLabel = (user: UserResponse) => {
     const role = user.roles[0] || 'viewer';
-    return role.charAt(0).toUpperCase() + role.slice(1);
+    if (role === 'admin') return '管理员';
+    if (role === 'editor') return '编辑者';
+    return '查看者';
   };
 
   const activityLabel = (user: UserResponse) => {
@@ -72,7 +74,7 @@ export default function UsersView() {
     <div className="h-full flex flex-col bg-[#0B0B0C] text-slate-200 p-8">
       <header className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">用户管理 (Users Directory)</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">用户管理</h1>
           <p className="text-sm text-slate-400">管理团队成员、权限分配及订阅计划</p>
         </div>
         <button onClick={() => setShowInviteForm(true)} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
@@ -109,14 +111,14 @@ export default function UsersView() {
           </div>
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50">
             <option value="all">全部角色</option>
-            <option value="admin">Admin</option>
-            <option value="editor">Editor</option>
-            <option value="viewer">Viewer</option>
+            <option value="admin">管理员</option>
+            <option value="editor">编辑者</option>
+            <option value="viewer">查看者</option>
           </select>
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50">
             <option value="all">全部状态</option>
-            <option value="active">active</option>
-            <option value="disabled">disabled</option>
+            <option value="active">启用</option>
+            <option value="disabled">停用</option>
           </select>
           <button onClick={() => setNotice('高级筛选、角色修改和禁用操作需要后端用户管理接口，当前支持本地筛选。')} className="px-3 py-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-300 text-sm flex items-center space-x-2 transition-colors">
             <Filter size={16} />
@@ -142,9 +144,9 @@ export default function UsersView() {
             <input value={inviteForm.email} onChange={(event) => setInviteForm({ ...inviteForm, email: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="邮箱" />
             <input value={inviteForm.name} onChange={(event) => setInviteForm({ ...inviteForm, name: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="姓名" />
             <select value={inviteForm.role} onChange={(event) => setInviteForm({ ...inviteForm, role: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
-              <option value="viewer">Viewer</option>
-              <option value="editor">Editor</option>
-              <option value="admin">Admin</option>
+              <option value="viewer">查看者</option>
+              <option value="editor">编辑者</option>
+              <option value="admin">管理员</option>
             </select>
             <button type="submit" disabled={saving} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">{saving ? '邀请中...' : '发送邀请'}</button>
           </div>
@@ -190,13 +192,13 @@ export default function UsersView() {
                 </td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-xs font-medium border ${user.roles.includes('admin') ? 'border-purple-500/30 text-purple-400 bg-purple-500/10' : user.roles.includes('editor') ? 'border-brand/30 text-brand bg-brand/10' : 'border-slate-500/30 text-slate-400 bg-slate-500/10'}`}>
-                    {user.permissions.length} permissions
+                    {user.permissions.length} 个权限
                   </span>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${user.status === 'active' ? 'bg-brand' : 'bg-slate-600'}`} />
-                    <span className="text-sm text-slate-400">{user.status}</span>
+                    <span className="text-sm text-slate-400">{user.status === 'active' ? '启用' : '停用'}</span>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-slate-400">{activityLabel(user)}</td>

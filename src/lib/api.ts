@@ -161,8 +161,42 @@ export interface UserResponse {
   roles: string[];
   permissions: string[];
   status: string;
+  usedCredits: number;
+  remainingCredits: number;
   createdAt: string;
   lastLoginAt?: string;
+}
+
+export interface ModelUsageRecordResponse {
+  id: string;
+  runId?: string;
+  projectId?: string;
+  canvasId?: string;
+  nodeId?: string;
+  capability: string;
+  provider: string;
+  modelName: string;
+  modelDisplayName?: string;
+  compatibilityMode?: string;
+  endpoint: string;
+  requestCount: number;
+  inputChars: number;
+  outputChars: number;
+  credits: number;
+  status: string;
+  errorMessage?: string;
+  providerRequestId?: string;
+  createdAt: string;
+  completedAt: string;
+  durationMs: number;
+}
+
+export interface UsageSummaryResponse {
+  initialCredits: number;
+  usedCredits: number;
+  remainingCredits: number;
+  requestCount: number;
+  recentRecords: ModelUsageRecordResponse[];
 }
 
 export interface LoginResponse {
@@ -265,6 +299,14 @@ export async function listUsers(): Promise<UserResponse[]> {
   return requestJson<UserResponse[]>('/api/users');
 }
 
+export async function getMyUsage(): Promise<UsageSummaryResponse> {
+  return requestJson<UsageSummaryResponse>('/api/usage/me');
+}
+
+export async function listMyUsageRecords(limit = 50): Promise<ModelUsageRecordResponse[]> {
+  return requestJson<ModelUsageRecordResponse[]>(`/api/usage/me/records?limit=${limit}`);
+}
+
 export async function inviteUser(payload: { name: string; email: string; role: string }): Promise<UserResponse> {
   return requestJson<UserResponse>('/api/users', {
     method: 'POST',
@@ -344,6 +386,18 @@ export async function updateCanvasNodePosition(canvasId: string, nodeId: string,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ position }),
+  });
+}
+
+export async function updateCanvasNodeOutput(
+  canvasId: string,
+  nodeId: string,
+  payload: { status?: string; output: Record<string, unknown> },
+): Promise<CanvasNodeResponse> {
+  return requestJson<CanvasNodeResponse>(`/api/canvas/${canvasId}/nodes/${nodeId}/output`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
 }
 

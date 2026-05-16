@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
+import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
+import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -37,6 +37,14 @@ interface Message {
   timestamp: Date;
   kind?: 'normal' | 'process';
   status?: 'running' | 'success' | 'failed';
+  media?: MessageMedia;
+}
+
+interface MessageMedia {
+  type: 'image' | 'video';
+  name: string;
+  url: string;
+  thumbnailUrl: string;
 }
 
 interface TaskItem {
@@ -66,6 +74,13 @@ interface StepOutputState {
   title: string;
   content: string;
   output: Record<string, unknown>;
+}
+
+interface ScriptEditState {
+  nodeId: string;
+  summary: string;
+  style: string;
+  beatsText: string;
 }
 
 interface WorkspaceViewProps {
@@ -222,6 +237,71 @@ function toAsset(asset: AssetResponse): AssetItem {
   };
 }
 
+function toMessageMedia(result: GenerationResponse): MessageMedia | undefined {
+  if (!result.asset || (result.type !== 'image' && result.type !== 'video')) {
+    return undefined;
+  }
+  return {
+    type: result.type,
+    name: result.asset.name || (result.type === 'video' ? '生成视频' : '生成图片'),
+    url: result.asset.url,
+    thumbnailUrl: result.asset.thumbnailUrl || result.asset.url,
+  };
+}
+
+function friendlyDirectMessage(result: GenerationResponse): string {
+  if (result.type === 'image' && result.asset) {
+    return '图片已生成，已添加到画布。';
+  }
+  if (result.type === 'video' && result.asset) {
+    return '视频已生成，已添加到画布。';
+  }
+  return result.message;
+}
+
+function MediaMessageCard({ media }: { media: MessageMedia }) {
+  const previewUrl = media.thumbnailUrl || media.url;
+  const isVideo = media.type === 'video';
+  return (
+    <div className="mt-3 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0B0B0C]">
+      <div className="relative aspect-video bg-slate-950">
+        {isVideo && media.url ? (
+          <video
+            src={media.url}
+            poster={media.thumbnailUrl || undefined}
+            controls
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={media.name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-slate-500">
+            媒体已创建，等待预览地址。
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent p-3">
+          <span className="min-w-0 truncate text-[12px] font-semibold text-white">{media.name}</span>
+          {media.url && (
+            <a
+              href={media.url}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 rounded-md border border-white/15 bg-white/10 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-white/20"
+            >
+              打开
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function looksLikeCreativeCommand(message: string): boolean {
   const normalized = message.trim().toLowerCase();
   if (!normalized) return false;
@@ -273,6 +353,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskResponse | null>(null);
   const [runDetail, setRunDetail] = useState<AgentRunDetailResponse | null>(null);
+  const [scriptEdit, setScriptEdit] = useState<ScriptEditState | null>(null);
   const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -292,6 +373,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const confirmationStyle = getString(confirmationOutput?.style);
   const confirmationBeats = Array.isArray(confirmationOutput?.beats) ? confirmationOutput.beats.slice(0, 3).map(String) : [];
   const confirmationSource = sourceLabel(confirmationOutput);
+  const confirmationReferenceAssets = confirmation ? assets
+    .filter((asset) => asset.type === 'image')
+    .slice(0, 6) : [];
   const runStatusText = confirmation
     ? confirmation.message
     : runStatus === 'interrupted'
@@ -305,6 +389,38 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             : activeRunId
               ? '多 Agent 生成流程运行中'
               : '等待创作指令';
+
+  const openScriptEditor = useCallback((nodeId: string) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node) {
+      setSetupError('未找到可编辑的剧本节点。');
+      return;
+    }
+    const output = (node.data?.output || {}) as Record<string, unknown>;
+    const beats = Array.isArray(output.beats) ? output.beats.map(String) : [];
+    setScriptEdit({
+      nodeId,
+      summary: getString(output.summary, output.content),
+      style: getString(output.style),
+      beatsText: beats.join('\n'),
+    });
+  }, [nodes]);
+
+  const scriptConfirmationComment = useCallback(() => {
+    const scriptNode = nodes.find((node) => node.id === 'script-1' || node.type === 'script');
+    const output = (scriptNode?.data?.output || {}) as Record<string, unknown>;
+    const summary = getString(output.summary, output.content);
+    const style = getString(output.style);
+    const beats = Array.isArray(output.beats) ? output.beats.map(String).filter(Boolean) : [];
+    if (!summary && !style && beats.length === 0) {
+      return '前端确认继续';
+    }
+    return [
+      summary ? `确认后的剧本摘要：${summary}` : '',
+      style ? `风格：${style}` : '',
+      beats.length > 0 ? `关键节拍：\n${beats.map((beat, index) => `${index + 1}. ${beat}`).join('\n')}` : '',
+    ].filter(Boolean).join('\n');
+  }, [nodes]);
 
   const upsertEdge = useCallback((edge: CanvasEdgeResponse) => {
     const nextEdge = toFlowEdge(edge);
@@ -521,6 +637,31 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     });
   }, [setNodes]);
 
+  const saveScriptEdit = useCallback(async () => {
+    if (!project || !scriptEdit) return;
+    const beats = scriptEdit.beatsText
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    try {
+      const updated = await updateCanvasNodeOutput(project.canvasId, scriptEdit.nodeId, {
+        status: 'success',
+        output: {
+          summary: scriptEdit.summary.trim(),
+          style: scriptEdit.style.trim(),
+          beats,
+          editedByUser: true,
+        },
+      });
+      upsertNode(updated);
+      setScriptEdit(null);
+      setNotice('剧本已更新，确认后会按修改后的版本继续生成。');
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `剧本保存失败：${error.message}` : '剧本保存失败。');
+    }
+  }, [project, scriptEdit, upsertNode]);
+
   const updateNodeFromEvent = useCallback((nodeId: string, status?: string, output?: Record<string, unknown>, updatedAt?: string) => {
     setNodes((currentNodes) => currentNodes.map((node) => {
       if (node.id !== nodeId) return node;
@@ -589,6 +730,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
 
     if (event.event === 'message.completed') {
+      setMessages((prev) => prev.map((item) => item.id === `stream-${event.runId}`
+        ? { ...item, status: 'success' }
+        : item));
       setMessages((prev) => [...prev, {
         id: `assistant-${event.runId}-${prev.length}`,
         sender: data.sender || '导演',
@@ -711,7 +855,17 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     if (event.event === 'run.completed' || event.event === 'run.failed' || event.event === 'run.cancelled') {
       setRunStatus(event.event === 'run.completed' ? 'success' : event.event === 'run.cancelled' ? 'cancelled' : 'failed');
       if (event.event === 'run.failed') {
-        setRunError(getString(data.error, data.message, '本次生成失败。'));
+        const errorMessage = getString(data.error, data.message, '本次生成失败。');
+        setRunError(errorMessage);
+        setMessages((prev) => [...prev, {
+          id: `failed-${event.runId}`,
+          sender: '系统',
+          role: 'agent',
+          content: `失败：${errorMessage}`,
+          timestamp: new Date(event.createdAt),
+          kind: 'process',
+          status: 'failed',
+        }]);
       }
       setConfirmation(null);
       setIsTyping(false);
@@ -757,13 +911,15 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           : looksLikeImageCommand(cleanMessage) || looksLikeCreativeCommand(cleanMessage)
             ? await generateImage(payload)
             : await generateChat(payload);
+        const media = toMessageMedia(result);
 
         setMessages(prev => [...prev, {
           id: `assistant-direct-${Date.now()}`,
           sender: result.type === 'image' ? '图片生成' : result.type === 'video' ? '视频生成' : '对话助手',
           role: 'agent',
-          content: result.message,
+          content: friendlyDirectMessage(result),
           timestamp: new Date(),
+          media,
         }]);
         if (result.node) {
           upsertNode(result.node);
@@ -834,6 +990,15 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         if (eventSourceRef.current === source) {
           eventSourceRef.current = null;
         }
+        setMessages((prev) => [...prev, {
+          id: `stream-error-${run.runId}-${Date.now()}`,
+          sender: '系统',
+          role: 'agent',
+          content: '过程流已断开，请打开运行详情或重试本次 Agent Run。',
+          timestamp: new Date(),
+          kind: 'process',
+          status: 'failed',
+        }]);
       };
     } catch (error) {
       console.error(error);
@@ -851,7 +1016,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const handleConfirmRun = async () => {
     if (!activeRunId) return;
     try {
-      const result = await confirmAgentRun(activeRunId, '前端确认继续');
+      const result = await confirmAgentRun(activeRunId, confirmation?.checkpoint === 'script' ? scriptConfirmationComment() : '前端确认继续');
       setRunStatus(result.status);
       setConfirmation(null);
     } catch (error) {
@@ -962,6 +1127,11 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         return;
       }
 
+      if (detail.action === 'edit-script') {
+        openScriptEditor(detail.nodeId);
+        return;
+      }
+
       if (detail.action === 'regenerate') {
         void runAgent(detail.prompt || `重新生成 ${detail.title || '当前节点'}`, {
           mode: 'regenerate-node',
@@ -988,7 +1158,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     window.addEventListener('wandou:canvas-node-action', handleNodeAction);
     return () => window.removeEventListener('wandou:canvas-node-action', handleNodeAction);
-  }, [deleteNodePersistently, runAgent]);
+  }, [deleteNodePersistently, openScriptEditor, runAgent]);
 
   useEffect(() => {
     const prompt = initialPrompt?.trim();
@@ -1154,7 +1324,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     <>
                       {/* Only showing this complex structure for the first pre-filled message mapping to UI */}
                       {idx === 0 && (
-                        <div className={`whitespace-pre-wrap text-[13px] leading-relaxed ${
+                        <div className={`whitespace-pre-wrap break-words text-[13px] leading-relaxed ${
                           msg.kind === 'process'
                             ? 'rounded-xl border border-brand/20 bg-brand/10 p-3 text-slate-300'
                             : 'text-slate-300'
@@ -1163,17 +1333,10 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                         </div>
                       )}
 
-                      {idx === 0 && assets[0] && (
-                        <div className="aspect-video w-[180px] rounded-xl bg-slate-900 overflow-hidden relative group border border-white/5 mt-4">
-                           <img src={assets[0].thumbnailUrl} className="w-full h-full object-cover opacity-80" alt="Generated Output" />
-                           <div className="absolute bottom-2 left-2 right-2 truncate rounded-lg bg-black/50 px-2 py-1 text-[10px] text-slate-200 backdrop-blur">
-                             {assets[0].name}
-                           </div>
-                        </div>
-                      )}
+                      {idx === 0 && msg.media && <MediaMessageCard media={msg.media} />}
 
                       {idx !== 0 && (
-                        <div className={`whitespace-pre-wrap text-[13px] leading-relaxed ${
+                        <div className={`whitespace-pre-wrap break-words text-[13px] leading-relaxed ${
                           msg.kind === 'process'
                             ? `rounded-xl border p-3 ${
                                 msg.status === 'running'
@@ -1188,6 +1351,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                         </div>
                       )}
 
+                      {idx !== 0 && msg.media && <MediaMessageCard media={msg.media} />}
+
                     </>
                   )}
                 </div>
@@ -1201,60 +1366,139 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               )}
             </div>
           </div>
+
+          {scriptEdit && (
+            <div className="border-t border-white/5 bg-[#121213] p-4">
+              <div className="rounded-xl border border-brand/25 bg-[#171719] p-4 shadow-[0_0_24px_rgba(16,185,129,0.08)]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-bold text-slate-200">编辑剧本草稿</div>
+                    <div className="mt-1 text-[11px] text-slate-500">保存后再确认，后续角色、分镜和视频会按修改后的版本继续。</div>
+                  </div>
+                  <button onClick={() => setScriptEdit(null)} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="关闭编辑">
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400">摘要</span>
+                    <textarea
+                      value={scriptEdit.summary}
+                      onChange={(event) => setScriptEdit((current) => current ? { ...current, summary: event.target.value } : current)}
+                      className="min-h-[78px] w-full resize-y rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[12px] leading-5 text-slate-200 outline-none focus:border-brand/50"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400">风格</span>
+                    <input
+                      value={scriptEdit.style}
+                      onChange={(event) => setScriptEdit((current) => current ? { ...current, style: event.target.value } : current)}
+                      className="h-9 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-[12px] text-slate-200 outline-none focus:border-brand/50"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400">关键节拍（每行一个）</span>
+                    <textarea
+                      value={scriptEdit.beatsText}
+                      onChange={(event) => setScriptEdit((current) => current ? { ...current, beatsText: event.target.value } : current)}
+                      className="min-h-[118px] w-full resize-y rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[12px] leading-5 text-slate-200 outline-none focus:border-brand/50"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button onClick={() => setScriptEdit(null)} className="h-9 rounded-lg border border-white/10 bg-white/5 text-[12px] font-bold text-slate-300 hover:bg-white/10">
+                    取消
+                  </button>
+                  <button onClick={saveScriptEdit} className="h-9 rounded-lg bg-brand text-[12px] font-bold text-white hover:bg-brand/90">
+                    保存剧本
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Chat Input */}
           <div className="p-4 border-t border-white/5 bg-[#121213]">
             {(activeRunId || confirmation) && (
-              <div className="mb-3 grid grid-cols-3 gap-2">
-                <button
-                  onClick={handleConfirmRun}
-                  disabled={!activeRunId || !confirmation || runStatus === 'interrupted'}
-                  className="flex h-9 items-center justify-center space-x-1.5 rounded-lg bg-brand px-3 text-[12px] font-bold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <CheckCircle2 size={14} />
-                  <span>确认</span>
-                </button>
-                {runStatus === 'interrupted' ? (
-                  <button
-                    onClick={handleResumeRun}
-                    disabled={!activeRunId}
-                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <RefreshCw size={14} />
-                    <span>恢复</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleInterruptRun}
-                    disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
-                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <PauseCircle size={14} />
-                    <span>打断</span>
-                  </button>
+              <div className="mb-3 space-y-2">
+                {confirmation && confirmationReferenceAssets.length > 0 && (
+                  <div className="rounded-xl border border-brand/20 bg-brand/10 p-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-200">确认使用参考图</span>
+                      <span className="text-[10px] text-slate-500">{confirmationReferenceAssets.length} 张</span>
+                    </div>
+                    <div className="grid grid-cols-6 gap-1.5">
+                      {confirmationReferenceAssets.map((asset) => (
+                        <div key={asset.id} className="aspect-square overflow-hidden rounded-lg border border-white/10 bg-black/20" title={asset.name}>
+                          <img src={asset.thumbnailUrl || asset.url} alt={asset.name} className="h-full w-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-                <button
-                  onClick={handleCancelRun}
-                  disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
-                  className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 text-[12px] font-bold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <XCircle size={14} />
-                  <span>取消</span>
-                </button>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={handleConfirmRun}
+                    disabled={!activeRunId || !confirmation || runStatus === 'interrupted'}
+                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg bg-brand px-3 text-[12px] font-bold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>确认</span>
+                  </button>
+                  {runStatus === 'interrupted' ? (
+                    <button
+                      onClick={handleResumeRun}
+                      disabled={!activeRunId}
+                      className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <RefreshCw size={14} />
+                      <span>恢复</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleInterruptRun}
+                      disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                      className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <PauseCircle size={14} />
+                      <span>打断</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleCancelRun}
+                    disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 text-[12px] font-bold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <XCircle size={14} />
+                    <span>取消</span>
+                  </button>
+                </div>
               </div>
             )}
-            <div className="flex items-center px-4 py-2 rounded-2xl bg-[#1A1A1C] border border-white/5 focus-within:border-white/20 transition-colors group relative">
-              <button onClick={handleFileUnavailable} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-1 relative" title="上传附件">
-                <Paperclip size={16} />
+            <div className="relative flex items-center gap-2 rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_24%_0%,rgba(16,185,129,0.14),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(26,26,28,0.96))] px-3 py-2 shadow-[0_18px_60px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors focus-within:border-brand/40">
+              <button
+                onClick={handleFileUnavailable}
+                className="group relative h-12 w-[76px] shrink-0 rounded-2xl border border-white/10 bg-white/[0.035] transition-all hover:border-brand/35 hover:bg-brand/10"
+                title="添加图片附件"
+              >
+                <span className="absolute left-3 top-1.5 flex h-9 w-9 rotate-[-6deg] flex-col items-center justify-center rounded-xl border border-dashed border-white/25 bg-[#F7FAF9]/[0.04] text-slate-400 transition-transform group-hover:rotate-[-2deg] group-hover:text-white">
+                  <Plus size={14} />
+                  <span className="text-[9px] font-black leading-none">图片</span>
+                </span>
+                <span className="absolute bottom-2 right-2 text-[10px] font-bold text-slate-400 group-hover:text-white">附件</span>
               </button>
-              <button onClick={() => setNotice('请选择画布节点后使用节点卡片或右侧配置中的引用/重跑能力。')} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-2" title="引用画布内容">
+              <button
+                onClick={() => setNotice('请选择画布节点后使用节点卡片或右侧配置中的引用/重跑能力。')}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                title="引用画布内容"
+              >
                 <CopyPlus size={16} />
               </button>
               <input 
                 type="text" 
                 placeholder="描述或输入指令（支持上传参考图、视频）..." 
                 disabled={!project}
-                className="flex-1 bg-transparent border-none outline-none text-[13px] text-slate-200 placeholder-slate-500 py-1.5 pr-8 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-w-0 flex-1 border-none bg-transparent py-1.5 pr-10 text-[13px] text-slate-200 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -1269,7 +1513,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                   <button 
                     onClick={handleSendMessage}
                     disabled={isTyping || !project}
-                    className="p-1.5 text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl bg-brand p-1.5 text-white shadow-[0_0_18px_rgba(16,185,129,0.26)] transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Send size={14} />
                   </button>
@@ -1451,9 +1695,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
 
             <div className="absolute bottom-4 left-4 right-4 z-30 lg:hidden">
-              <div className="flex items-center rounded-2xl border border-white/10 bg-[#121213]/95 px-3 py-2 shadow-2xl backdrop-blur">
-                <button onClick={handleFileUnavailable} className="p-1.5 text-slate-500">
-                  <Paperclip size={16} />
+              <div className="flex items-center gap-2 rounded-[22px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,18,19,0.96))] px-2 py-2 shadow-2xl backdrop-blur">
+                <button onClick={handleFileUnavailable} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/[0.04] text-slate-400">
+                  <ImagePlus size={16} />
                 </button>
                 <input
                   type="text"

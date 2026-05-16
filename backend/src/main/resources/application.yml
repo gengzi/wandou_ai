@@ -34,6 +34,13 @@ wandou:
   ai:
     provider:
       type: mock
+    usage:
+      initial-credits: ${WANDOU_AI_INITIAL_CREDITS:1200}
+      credits:
+        text: ${WANDOU_AI_USAGE_CREDITS_TEXT:1}
+        image: ${WANDOU_AI_USAGE_CREDITS_IMAGE:8}
+        video: ${WANDOU_AI_USAGE_CREDITS_VIDEO:50}
+        audio: ${WANDOU_AI_USAGE_CREDITS_AUDIO:4}
     agent:
       monitor:
         enabled: ${WANDOU_AI_AGENT_MONITOR_ENABLED:true}

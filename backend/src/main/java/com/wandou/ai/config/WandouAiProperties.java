@@ -10,6 +10,7 @@ public class WandouAiProperties {
 
     private Cors cors = new Cors();
     private Agent agent = new Agent();
+    private Usage usage = new Usage();
 
     public Cors getCors() {
         return cors;
@@ -25,6 +26,14 @@ public class WandouAiProperties {
 
     public void setAgent(Agent agent) {
         this.agent = agent;
+    }
+
+    public Usage getUsage() {
+        return usage;
+    }
+
+    public void setUsage(Usage usage) {
+        this.usage = usage;
     }
 
     public static class Cors {
@@ -78,6 +87,66 @@ public class WandouAiProperties {
 
         public void setMinPublishIntervalMs(long minPublishIntervalMs) {
             this.minPublishIntervalMs = minPublishIntervalMs;
+        }
+    }
+
+    public static class Usage {
+        private int initialCredits = 1200;
+        private UsageCredits credits = new UsageCredits();
+
+        public int getInitialCredits() {
+            return initialCredits;
+        }
+
+        public void setInitialCredits(int initialCredits) {
+            this.initialCredits = initialCredits;
+        }
+
+        public UsageCredits getCredits() {
+            return credits;
+        }
+
+        public void setCredits(UsageCredits credits) {
+            this.credits = credits;
+        }
+    }
+
+    public static class UsageCredits {
+        private int text = 1;
+        private int image = 8;
+        private int video = 50;
+        private int audio = 4;
+
+        public int getText() {
+            return text;
+        }
+
+        public void setText(int text) {
+            this.text = text;
+        }
+
+        public int getImage() {
+            return image;
+        }
+
+        public void setImage(int image) {
+            this.image = image;
+        }
+
+        public int getVideo() {
+            return video;
+        }
+
+        public void setVideo(int video) {
+            this.video = video;
+        }
+
+        public int getAudio() {
+            return audio;
+        }
+
+        public void setAudio(int audio) {
+            this.audio = audio;
         }
     }
 }

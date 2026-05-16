@@ -1,6 +1,8 @@
 package com.wandou.ai.user;
 
 import com.wandou.ai.common.IdGenerator;
+import com.wandou.ai.usage.ModelUsageService;
+import com.wandou.ai.usage.dto.UsageSummaryResponse;
 import com.wandou.ai.user.dto.InviteUserRequest;
 import com.wandou.ai.user.dto.UserResponse;
 import jakarta.transaction.Transactional;
@@ -23,11 +25,13 @@ public class UserService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ModelUsageService modelUsageService;
 
-    public UserService(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder, ModelUsageService modelUsageService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.modelUsageService = modelUsageService;
     }
 
     @Transactional
@@ -92,6 +96,7 @@ public class UserService {
     }
 
     public UserResponse toResponse(UserAccount user) {
+        UsageSummaryResponse usage = modelUsageService.summary(user.id());
         return new UserResponse(
                 user.id(),
                 user.name(),
@@ -99,6 +104,8 @@ public class UserService {
                 user.roles().stream().map(Role::code).sorted().toList(),
                 permissionCodes(user),
                 user.active() ? "active" : "disabled",
+                usage.usedCredits(),
+                usage.remainingCredits(),
                 user.createdAt(),
                 user.lastLoginAt()
         );
