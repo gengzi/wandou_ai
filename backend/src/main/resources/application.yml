@@ -34,6 +34,16 @@ wandou:
   ai:
     provider:
       type: mock
+    video:
+      provider: ${WANDOU_AI_VIDEO_PROVIDER:mock}
+    storage:
+      type: ${WANDOU_AI_STORAGE_TYPE:minio}
+      minio:
+        endpoint: ${WANDOU_AI_MINIO_ENDPOINT:http://localhost:9000}
+        access-key: ${WANDOU_AI_MINIO_ACCESS_KEY:wandouminio}
+        secret-key: ${WANDOU_AI_MINIO_SECRET_KEY:wandouminio123}
+        bucket: ${WANDOU_AI_MINIO_BUCKET:wandou-assets}
+        public-base-url: ${WANDOU_AI_MINIO_PUBLIC_BASE_URL:http://localhost:9000}
     cors:
       allowed-origins:
         - http://localhost:5173

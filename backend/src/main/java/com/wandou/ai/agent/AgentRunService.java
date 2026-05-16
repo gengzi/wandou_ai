@@ -1,5 +1,6 @@
 package com.wandou.ai.agent;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.wandou.ai.agent.dto.AgentRunControlRequest;
 import com.wandou.ai.agent.dto.AgentRunControlResponse;
 import com.wandou.ai.agent.dto.AgentRunDetailResponse;
@@ -8,6 +9,9 @@ import com.wandou.ai.agent.dto.AgentRunResponse;
 import com.wandou.ai.agent.runtime.VideoAgentOutput;
 import com.wandou.ai.agent.runtime.VideoAgentRuntime;
 import com.wandou.ai.agent.runtime.VideoAgentStep;
+import com.wandou.ai.agent.video.VideoGenerationProvider;
+import com.wandou.ai.agent.video.VideoGenerationRequest;
+import com.wandou.ai.agent.video.VideoGenerationStatus;
 import com.wandou.ai.asset.AssetService;
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.canvas.dto.CanvasEdgeResponse;
@@ -50,6 +54,7 @@ public class AgentRunService {
     private final TaskService taskService;
     private final AssetService assetService;
     private final VideoAgentRuntime videoAgentRuntime;
+    private final VideoGenerationProvider videoGenerationProvider;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
 
@@ -60,7 +65,8 @@ public class AgentRunService {
             ConversationService conversationService,
             TaskService taskService,
             AssetService assetService,
-            VideoAgentRuntime videoAgentRuntime
+            VideoAgentRuntime videoAgentRuntime,
+            VideoGenerationProvider videoGenerationProvider
     ) {
         this.sseHub = sseHub;
         this.projectService = projectService;
@@ -69,6 +75,7 @@ public class AgentRunService {
         this.taskService = taskService;
         this.assetService = assetService;
         this.videoAgentRuntime = videoAgentRuntime;
+        this.videoGenerationProvider = videoGenerationProvider;
     }
 
     public AgentRunResponse start(AgentRunRequest request) {
@@ -76,8 +83,10 @@ public class AgentRunService {
         ConversationResponse conversation = conversationService.getOrCreate(request.conversationId(), project.id());
         String canvasId = valueOrDefault(request.canvasId(), project.canvasId());
         String runId = IdGenerator.longId("run_");
+        String userId = StpUtil.getLoginIdAsString();
         MutableAgentRun run = new MutableAgentRun(
                 runId,
+                userId,
                 project.id(),
                 conversation.id(),
                 canvasId,
@@ -193,7 +202,7 @@ public class AgentRunService {
             }
 
             VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run);
-            VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(request.message(), listener);
+            VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(run.userId, request.message(), listener);
             VideoAgentOutput scriptOutput = planOutputs.require(VideoAgentStep.SCRIPT);
 
             conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, scriptOutput.text());
@@ -210,18 +219,23 @@ public class AgentRunService {
             ));
             CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", scriptOutput.output());
             publishNodeUpdated(run, updatedScriptNode);
-            waitForConfirmation(run, "script", "剧本已完成，请确认后继续角色、分镜和关键帧设计。");
+            waitForConfirmation(run, "script", "剧本草稿已生成，请确认后继续角色、分镜和关键帧设计。");
 
-            VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(request.message(), listener);
+            VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(run.userId, request.message(), listener);
             VideoAgentOutput characterOutput = designOutputs.require(VideoAgentStep.CHARACTER);
             VideoAgentOutput storyboardOutput = designOutputs.require(VideoAgentStep.STORYBOARD);
             VideoAgentOutput visualOutput = designOutputs.require(VideoAgentStep.VISUAL);
             VideoAgentOutput audioOutput = designOutputs.require(VideoAgentStep.AUDIO);
 
-            CanvasNodeResponse characterNode = updateNode(run, "char-1", "running", Map.of(
-                    "sourceNodeId", scriptNode.id(),
-                    "step", "character"
-            ));
+            CanvasNodeResponse characterNode = addNode(run,
+                    run.canvasId,
+                    "character",
+                    "角色一致性生成",
+                    "running",
+                    new PositionResponse(500, 80),
+                    Map.of("sourceNodeId", scriptNode.id(), "step", "character")
+            );
+            addEdge(run, scriptNode.id(), characterNode.id());
             CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", characterOutput.output());
             publishNodeUpdated(run, updatedCharacterNode);
 
@@ -230,7 +244,7 @@ public class AgentRunService {
                     "storyboard",
                     "分镜设计",
                     "running",
-                    new PositionResponse(80, 500),
+                    new PositionResponse(500, 480),
                     Map.of("sourceNodeId", scriptNode.id(), "step", "storyboard")
             );
             addEdge(run, scriptNode.id(), storyboardNode.id());
@@ -238,17 +252,27 @@ public class AgentRunService {
             CanvasNodeResponse updatedStoryboardNode = canvasService.updateNode(run.canvasId, storyboardNode.id(), "success", storyboardOutput.output());
             publishNodeUpdated(run, updatedStoryboardNode);
 
-            CanvasNodeResponse imageNode = updateNode(run, "img-1", "running", Map.of(
-                    "sourceNodeId", storyboardNode.id(),
-                    "step", "keyframe"
-            ));
+            CanvasNodeResponse imageNode = addNode(run,
+                    run.canvasId,
+                    "images",
+                    "场景概念图生成",
+                    "running",
+                    new PositionResponse(960, 80),
+                    Map.of("sourceNodeId", storyboardNode.id(), "step", "keyframe")
+            );
+            addEdge(run, storyboardNode.id(), imageNode.id());
             CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", visualOutput.output());
             publishNodeUpdated(run, updatedImageNode);
 
-            CanvasNodeResponse audioNode = updateNode(run, "audio-1", "running", Map.of(
-                    "sourceNodeId", storyboardNode.id(),
-                    "step", "audio"
-            ));
+            CanvasNodeResponse audioNode = addNode(run,
+                    run.canvasId,
+                    "audio",
+                    "生成音效配乐",
+                    "running",
+                    new PositionResponse(960, 480),
+                    Map.of("sourceNodeId", storyboardNode.id(), "step", "audio")
+            );
+            addEdge(run, storyboardNode.id(), audioNode.id());
             CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", audioOutput.output());
             publishNodeUpdated(run, updatedAudioNode);
 
@@ -259,51 +283,42 @@ public class AgentRunService {
                     "video",
                     "图生视频任务",
                     "running",
-                    new PositionResponse(1300, 120),
+                    new PositionResponse(1380, 80),
                     Map.of("sourceNodeId", imageNode.id(), "step", "video")
             );
-            addEdge(run, storyboardNode.id(), videoNode.id());
             addEdge(run, imageNode.id(), videoNode.id());
+
+            waitForConfirmation(run, "final-review", "最终确认后将提交视频生成任务并写入资产库。");
+            VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(run.userId, request.message(), listener);
+            VideoAgentOutput exportOutput = exportOutputs.require(VideoAgentStep.EXPORT);
 
             TaskResponse task = taskService.create(runId, run.projectId, run.canvasId, videoNode.id(), "video");
             publish(runId, "task.created", Map.of("task", task));
 
-            for (int progress : new int[]{10, 35, 65, 90}) {
-                ensureCanContinue(run);
-                sleep(180);
-                TaskResponse updatedTask = taskService.update(
-                        task.id(),
-                        "running",
-                        progress,
-                        "正在生成视频，当前进度 " + progress + "%"
-                );
-                publish(runId, "task.progress", Map.of("task", updatedTask));
-            }
-
-            waitForConfirmation(run, "final-review", "视频任务已接近完成，请确认后合成成片并写入资产库。");
-            VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(request.message(), listener);
-            VideoAgentOutput exportOutput = exportOutputs.require(VideoAgentStep.EXPORT);
-
-            AssetResponse asset = assetService.create(
+            VideoGenerationStatus generation = executeVideoGeneration(run, request, visualOutput, exportOutput, task, videoNode);
+            AssetResponse asset = assetService.createStoredVideo(
                     run.projectId,
                     run.canvasId,
                     videoNode.id(),
-                    "video",
-                    "AI 生成视频 Demo",
-                    "https://example.com/demo-video.mp4",
-                    "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop"
+                    stringValue(exportOutput.output(), "assetName", "AI 生成视频预览"),
+                    generation.videoBytes(),
+                    generation.videoContentType(),
+                    generation.thumbnailBytes(),
+                    generation.thumbnailContentType()
             );
             TaskResponse completedTask = taskService.update(task.id(), "success", 100, "视频生成完成");
             publish(runId, "asset.created", Map.of("asset", asset));
             publish(runId, "task.completed", Map.of("task", completedTask));
 
-            CanvasNodeResponse updatedVideoNode = canvasService.updateNode(run.canvasId, videoNode.id(), "success", Map.of(
-                    "assetId", asset.id(),
-                    "thumbnailUrl", asset.thumbnailUrl(),
-                    "url", asset.url(),
-                    "duration", "8s",
-                    "model", "AgentScope Mock Video Provider"
-            ));
+            Map<String, Object> videoOutput = new java.util.LinkedHashMap<>();
+            videoOutput.put("assetId", asset.id());
+            videoOutput.put("thumbnailUrl", asset.thumbnailUrl());
+            videoOutput.put("url", asset.url());
+            videoOutput.put("duration", stringValue(exportOutput.output(), "duration", "8s"));
+            videoOutput.put("model", stringValue(exportOutput.output(), "model", "AgentScope Structured Video Runtime"));
+            videoOutput.put("summary", stringValue(exportOutput.output(), "summary", "视频生成完成"));
+            videoOutput.put("providerJobId", generation.providerJobId());
+            CanvasNodeResponse updatedVideoNode = canvasService.updateNode(run.canvasId, videoNode.id(), "success", videoOutput);
             publishNodeUpdated(run, updatedVideoNode);
 
             CanvasNodeResponse finalNode = addNode(run,
@@ -311,16 +326,16 @@ public class AgentRunService {
                     "final",
                     "成片合成",
                     "success",
-                    new PositionResponse(1300, 500),
+                    new PositionResponse(1380, 480),
                     Map.of("sourceNodeId", videoNode.id(), "step", "compose")
             );
             Map<String, Object> finalOutput = new java.util.LinkedHashMap<>(exportOutput.output());
             finalOutput.put("assetId", asset.id());
             finalOutput.put("thumbnailUrl", asset.thumbnailUrl());
             finalOutput.put("url", asset.url());
+            finalOutput.put("providerJobId", generation.providerJobId());
             CanvasNodeResponse updatedFinalNode = canvasService.updateNode(run.canvasId, finalNode.id(), "success", finalOutput);
             addEdge(run, videoNode.id(), finalNode.id());
-            addEdge(run, audioNode.id(), finalNode.id());
             publishNodeUpdated(run, updatedFinalNode);
 
             mark(run, "success", null);
@@ -335,13 +350,83 @@ public class AgentRunService {
                     "status", "cancelled"
             ));
         } catch (RuntimeException ex) {
-            mark(run, "failed", ex.getMessage());
+            String errorMessage = ex.getMessage() == null ? "agent run failed" : ex.getMessage();
+            mark(run, "failed", errorMessage);
+            conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, "视频生成失败：" + errorMessage);
             publish(runId, "run.failed", Map.of(
                     "runId", runId,
                     "status", "failed",
-                    "error", ex.getMessage()
+                    "error", errorMessage
             ));
         }
+    }
+
+    private VideoGenerationStatus executeVideoGeneration(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            VideoAgentOutput visualOutput,
+            VideoAgentOutput exportOutput,
+            TaskResponse task,
+            CanvasNodeResponse videoNode
+    ) {
+        String providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
+                run.runId,
+                run.projectId,
+                run.canvasId,
+                videoNode.id(),
+                request.message(),
+                stringValue(visualOutput.output(), "prompt", request.message()),
+                stringValue(exportOutput.output(), "duration", "8s"),
+                stringValue(exportOutput.output(), "model", "mock")
+        ));
+
+        publish(run.runId, "video.provider.submitted", Map.of(
+                "providerJobId", providerJobId,
+                "taskId", task.id()
+        ));
+
+        int lastProgress = -1;
+        String lastMessage = "";
+        for (int attempt = 0; attempt < 80; attempt++) {
+            ensureCanContinue(run);
+            VideoGenerationStatus status = videoGenerationProvider.getStatus(providerJobId);
+            String statusMessage = status.message() == null ? "视频生成任务进行中" : status.message();
+            if (status.progress() != lastProgress || !statusMessage.equals(lastMessage)) {
+                TaskResponse updatedTask = taskService.update(
+                        task.id(),
+                        "failed".equals(status.status()) ? "failed" : "running",
+                        status.progress(),
+                        statusMessage
+                );
+                publish(run.runId, "task.progress", Map.of("task", updatedTask));
+                lastProgress = status.progress();
+                lastMessage = statusMessage;
+            }
+            if ("succeeded".equals(status.status())) {
+                if (status.videoBytes() == null || status.videoBytes().length == 0) {
+                    failVideoTask(run, task, videoNode, "provider returned empty video");
+                }
+                return status;
+            }
+            if ("failed".equals(status.status())) {
+                failVideoTask(run, task, videoNode, status.error() == null ? statusMessage : status.error());
+            }
+            sleep(180);
+        }
+        failVideoTask(run, task, videoNode, "video provider timed out");
+        throw new IllegalStateException("video provider timed out");
+    }
+
+    private void failVideoTask(MutableAgentRun run, TaskResponse task, CanvasNodeResponse videoNode, String error) {
+        String message = error == null || error.isBlank() ? "视频生成失败" : error;
+        TaskResponse failedTask = taskService.update(task.id(), "failed", 100, message);
+        publish(run.runId, "task.failed", Map.of("task", failedTask));
+        CanvasNodeResponse failedNode = canvasService.updateNode(run.canvasId, videoNode.id(), "failed", Map.of(
+                "summary", message,
+                "error", message
+        ));
+        publishNodeUpdated(run, failedNode);
+        throw new IllegalStateException(message);
     }
 
     private VideoAgentRuntime.VideoAgentRunListener listenerFor(MutableAgentRun run) {
@@ -531,10 +616,17 @@ public class AgentRunService {
         }
         return Map.of(
                 "prompt", message,
-                "thumbnailUrl", "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop",
-                "summary", "已按当前节点指令重新生成结果。",
+                "summary", "已按当前节点指令重新生成具体结果：" + message,
                 "duration", "8s"
         );
+    }
+
+    private String stringValue(Map<String, Object> output, String key, String fallback) {
+        Object value = output.get(key);
+        if (value instanceof String string && !string.isBlank()) {
+            return string;
+        }
+        return fallback;
     }
 
     @PreDestroy
@@ -621,6 +713,7 @@ public class AgentRunService {
 
     private static final class MutableAgentRun {
         private final String runId;
+        private final String userId;
         private final String projectId;
         private final String conversationId;
         private final String canvasId;
@@ -642,6 +735,7 @@ public class AgentRunService {
 
         private MutableAgentRun(
                 String runId,
+                String userId,
                 String projectId,
                 String conversationId,
                 String canvasId,
@@ -653,6 +747,7 @@ public class AgentRunService {
                 Instant updatedAt
         ) {
             this.runId = runId;
+            this.userId = userId;
             this.projectId = projectId;
             this.conversationId = conversationId;
             this.canvasId = canvasId;

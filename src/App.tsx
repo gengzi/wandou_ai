@@ -4,6 +4,7 @@ import HomeView from './components/HomeView.tsx';
 import WorkspaceView from './components/WorkspaceView.tsx';
 import AssetsView from './components/AssetsView.tsx';
 import UsersView from './components/UsersView.tsx';
+import ModelSettingsView from './components/ModelSettingsView.tsx';
 import BackgroundStars from './components/BackgroundStars.tsx';
 import LoginView from './components/LoginView.tsx';
 import { AnimatePresence, motion } from 'motion/react';
@@ -92,6 +93,16 @@ export default function App() {
               className="w-full h-full"
             >
               <UsersView />
+            </motion.div>
+          ) : view === 'settings' ? (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              className="w-full h-full"
+            >
+              <ModelSettingsView />
             </motion.div>
           ) : (
             <motion.div

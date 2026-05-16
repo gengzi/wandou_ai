@@ -1,5 +1,15 @@
 # Project Memory
 
+## Implementation Style
+
+- Backend and frontend development should prefer mature framework and component capabilities over custom infrastructure. Use Spring Boot, JPA, Flyway, Sa-Token, React, React Flow, existing UI primitives, and established project helpers before introducing bespoke code.
+- Implementations must stay concise and maintainable, but not by removing expected product behavior. Keep the code small through clear data models, reusable components, framework conventions, and scoped services rather than feature shortcuts.
+- Do not hand-roll generic framework concerns such as routing, validation, persistence mapping, auth interception, object storage clients, event transport, form state, canvas behavior, or common UI controls when the existing stack already provides a reliable path.
+- Frontend features should reuse existing components, icons, API client helpers, layout patterns, and state flows. Add new components only when they encapsulate real repeated behavior or keep a view readable.
+- Backend features should keep controllers thin, put business behavior in services, persist durable state through Flyway-managed schemas and repositories, and expose stable DTOs instead of leaking persistence entities.
+- Prefer OpenAI-compatible provider shapes for model configuration and invocation where practical, so text, image, audio, and video providers can share base URL, API key, model name, and adapter concepts while still allowing provider-specific extensions.
+- Before adding code, check whether a current module already owns that responsibility. Extend the existing owner rather than creating parallel implementations.
+
 ## Security and Authorization
 
 - This project is an enterprise-oriented application. Authentication and authorization must be built on mature frameworks instead of custom security logic.

@@ -47,6 +47,8 @@ export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
       <div className="flex flex-col items-center space-y-4">
         <motion.div
           whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => onViewChange('settings')}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5"
         >
           <Settings size={18} strokeWidth={1.5} />

@@ -2,13 +2,19 @@ package com.wandou.ai.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wandou.ai.user.UserAccount;
+import com.wandou.ai.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Instant;
+import java.util.LinkedHashSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -26,6 +32,12 @@ class AgentRunControlIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Test
     void agentScopeRunWaitsForConfirmationsAndCompletes() throws Exception {
@@ -51,6 +63,28 @@ class AgentRunControlIntegrationTest {
         JsonNode completed = awaitStatus(token, runId, "success");
         assertEvent(completed, "asset.created");
         assertEvent(completed, "run.completed");
+
+        mockMvc.perform(get("/api/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .param("projectId", project.path("id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].status").value("success"))
+                .andExpect(jsonPath("$.data[0].progress").value(100));
+
+        String assetsResponse = mockMvc.perform(get("/api/assets")
+                        .header("Authorization", "Bearer " + token)
+                        .param("projectId", project.path("id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].type").value("video"))
+                .andExpect(jsonPath("$.data[0].url").value(org.hamcrest.Matchers.containsString("/api/assets/")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String assetId = objectMapper.readTree(assetsResponse).path("data").path(0).path("id").asText();
+        mockMvc.perform(get("/api/assets/{assetId}/content", assetId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isNotEmpty());
     }
 
     @Test
@@ -86,12 +120,85 @@ class AgentRunControlIntegrationTest {
         assertEvent(cancelled, "run.cancelled");
     }
 
+    @Test
+    void mockVideoProviderFailureMarksRunAndTaskFailed() throws Exception {
+        String token = login();
+        JsonNode project = createProject(token);
+
+        String runId = startRun(
+                token,
+                project.path("id").asText(),
+                project.path("canvasId").asText(),
+                project.path("conversationId").asText(),
+                "生成一个 __fail_video__ 测试视频"
+        );
+
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "剧本可以，继续。");
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "角色和分镜通过。");
+        awaitStatus(token, runId, "waiting_confirmation");
+        confirm(token, runId, "提交失败测试。");
+
+        JsonNode failed = awaitStatus(token, runId, "failed");
+        assertEvent(failed, "task.failed");
+        assertEvent(failed, "run.failed");
+
+        mockMvc.perform(get("/api/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .param("projectId", project.path("id").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].status").value("failed"));
+    }
+
+    @Test
+    void assetContentRequiresLoginAndPermission() throws Exception {
+        String adminToken = login();
+        JsonNode project = createProject(adminToken);
+        String runId = startRun(adminToken, project.path("id").asText(), project.path("canvasId").asText(), project.path("conversationId").asText());
+
+        awaitStatus(adminToken, runId, "waiting_confirmation");
+        confirm(adminToken, runId, "剧本可以，继续。");
+        awaitStatus(adminToken, runId, "waiting_confirmation");
+        confirm(adminToken, runId, "角色和分镜通过。");
+        awaitStatus(adminToken, runId, "waiting_confirmation");
+        confirm(adminToken, runId, "生成成片。");
+        awaitStatus(adminToken, runId, "success");
+
+        String assetsResponse = mockMvc.perform(get("/api/assets")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("projectId", project.path("id").asText()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String assetId = objectMapper.readTree(assetsResponse).path("data").path(0).path("id").asText();
+
+        mockMvc.perform(get("/api/assets/{assetId}/content", assetId))
+                .andExpect(status().isUnauthorized());
+
+        String editorToken = login("viewer@wandou.ai", "Wandou@123456");
+        mockMvc.perform(get("/api/assets/{assetId}/content", assetId)
+                        .header("Authorization", "Bearer " + editorToken))
+                .andExpect(status().isOk());
+
+        createNoPermissionUser();
+        String noPermissionToken = login("no-assets@wandou.ai", "Wandou@123456");
+        mockMvc.perform(get("/api/assets/{assetId}/content", assetId)
+                        .header("Authorization", "Bearer " + noPermissionToken))
+                .andExpect(status().isForbidden());
+    }
+
     private String login() throws Exception {
+        return login("admin@wandou.ai", "Wandou@123456");
+    }
+
+    private String login(String email, String password) throws Exception {
         String response = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"admin@wandou.ai","password":"Wandou@123456"}
-                                """))
+                                {"email":"%s","password":"%s"}
+                                """.formatted(email, password)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andReturn()
@@ -116,6 +223,10 @@ class AgentRunControlIntegrationTest {
     }
 
     private String startRun(String token, String projectId, String canvasId, String conversationId) throws Exception {
+        return startRun(token, projectId, canvasId, conversationId, "生成一个太空站少女和机器伙伴的 8 秒视频");
+    }
+
+    private String startRun(String token, String projectId, String canvasId, String conversationId, String message) throws Exception {
         String response = mockMvc.perform(post("/api/agent/runs")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -124,10 +235,10 @@ class AgentRunControlIntegrationTest {
                                   "projectId":"%s",
                                   "canvasId":"%s",
                                   "conversationId":"%s",
-                                  "message":"生成一个太空站少女和机器伙伴的 8 秒视频",
+                                  "message":"%s",
                                   "agentName":"导演"
                                 }
-                                """.formatted(projectId, canvasId, conversationId)))
+                                """.formatted(projectId, canvasId, conversationId, message)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andReturn()
@@ -167,5 +278,21 @@ class AgentRunControlIntegrationTest {
 
     private void assertEvent(JsonNode detail, String eventName) {
         assertThat(detail.path("events").findValuesAsText("event")).contains(eventName);
+    }
+
+    private void createNoPermissionUser() {
+        if (userRepository.existsByEmail("no-assets@wandou.ai")) {
+            return;
+        }
+        userRepository.save(new UserAccount(
+                "usr_no_assets",
+                "No Assets",
+                "no-assets@wandou.ai",
+                passwordEncoder.encode("Wandou@123456"),
+                new LinkedHashSet<>(),
+                true,
+                Instant.now(),
+                null
+        ));
     }
 }

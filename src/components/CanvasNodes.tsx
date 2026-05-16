@@ -1,6 +1,45 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
 import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music, Clapperboard, CheckCircle2 } from 'lucide-react';
+import { getAuthToken } from '../lib/api';
+
+const getString = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return '';
+};
+
+const toArray = (value: unknown): any[] => Array.isArray(value) ? value : [];
+
+const getImageUrls = (...values: unknown[]) => values
+  .flatMap((value) => Array.isArray(value) ? value : value ? [value] : [])
+  .map((item) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      return getString(record.url, record.thumbnailUrl, record.imageUrl, record.src);
+    }
+    return '';
+  })
+  .filter(Boolean);
+
+const withAuthQuery = (url: string) => {
+  if (!url || !url.startsWith('/api/')) return url;
+  const token = getAuthToken();
+  if (!token) return url;
+  const nextUrl = new URL(url, window.location.origin);
+  nextUrl.searchParams.set('Authorization', `Bearer ${token}`);
+  return nextUrl.pathname + nextUrl.search;
+};
+
+const EmptyState = ({ children }: { children: React.ReactNode }) => (
+  <div className="rounded-xl border border-dashed border-white/10 bg-[#1A1A1C]/70 p-4 text-center text-[12px] leading-5 text-slate-500">
+    {children}
+  </div>
+);
 
 export const ScriptNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
@@ -8,6 +47,13 @@ export const ScriptNode = ({ id, data }: any) => {
   const status = data?.status || 'idle';
   const summary = data?.output?.summary || '等待 Agent Run 生成剧本摘要。';
   const style = data?.output?.style;
+  const modelSource = getString(data?.output?.modelSource);
+  const modelLabel = modelSource === 'configured-text-model'
+    ? getString(data?.output?.modelDisplayName, data?.output?.modelName, '已配置文本模型')
+    : modelSource === 'template-fallback'
+      ? '模板 fallback'
+      : '等待生成';
+  const entities = toArray(data?.output?.characters || data?.output?.roles || data?.output?.entities || data?.output?.scenes).slice(0, 4);
   
   return (
     <div className="w-[340px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
@@ -32,32 +78,37 @@ export const ScriptNode = ({ id, data }: any) => {
         <div>
           <h4 className="text-[11px] font-bold text-slate-400 mb-2 flex items-center justify-between">
             <span>剧本摘要</span>
-            <span className="text-[9px] px-1.5 py-0.5 bg-brand/20 text-brand rounded">AI Generated</span>
+            <span className={`max-w-[150px] truncate text-[9px] px-1.5 py-0.5 rounded ${
+              modelSource === 'template-fallback'
+                ? 'bg-yellow-300/10 text-yellow-200'
+                : modelSource === 'configured-text-model'
+                  ? 'bg-brand/20 text-brand'
+                  : 'bg-white/5 text-slate-500'
+            }`}>{modelLabel}</span>
           </h4>
           <p className="text-[13px] text-slate-300 leading-relaxed bg-[#1A1A1C] p-3 rounded-xl border border-white/5">{summary}</p>
           {style && <p className="text-[11px] text-slate-500 mt-2">风格：{style}</p>}
         </div>
         <div>
           <h4 className="text-[11px] font-bold text-slate-400 mb-2">提取角色场景</h4>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 hover:border-brand/40 transition-colors cursor-pointer group/item">
-              <div className="text-[13px] font-medium text-slate-200 mb-1 flex items-center justify-between">
-                <span>未来宇航少女</span>
-                <ImageIcon size={12} className="text-slate-500 group-hover/item:text-brand" />
-              </div>
-              <div className="text-[11px] text-slate-500 line-clamp-3">外貌：一头柔顺的粉色长发，在失重环境中轻轻飘逸...</div>
+          {entities.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {entities.map((entity: any, index) => (
+                <div key={entity.id || entity.name || entity.shot || index} className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 hover:border-brand/40 transition-colors cursor-pointer group/item">
+                  <div className="text-[13px] font-medium text-slate-200 mb-1 flex items-center justify-between">
+                    <span className="truncate">{getString(entity.name, entity.title, entity.shot, `条目 ${index + 1}`)}</span>
+                    <ImageIcon size={12} className="text-slate-500 group-hover/item:text-brand" />
+                  </div>
+                  <div className="text-[11px] text-slate-500 line-clamp-3">{getString(entity.prompt, entity.description, entity.content, entity.summary)}</div>
+                </div>
+              ))}
             </div>
-            <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 hover:border-brand/40 transition-colors cursor-pointer group/item">
-              <div className="text-[13px] font-medium text-slate-200 mb-1 flex items-center justify-between">
-                <span>机器小猫</span>
-                <ImageIcon size={12} className="text-slate-500 group-hover/item:text-brand" />
-              </div>
-              <div className="text-[11px] text-slate-500 line-clamp-3">一只拥有金属外壳和蓝色电子眼的机器小猫，小巧可爱...</div>
-            </div>
-          </div>
+          ) : (
+            <EmptyState>后端暂未返回角色或场景提取结果。</EmptyState>
+          )}
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-brand border-none" />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
   );
 };
@@ -70,7 +121,7 @@ export const CharacterNode = ({ id, data }: any) => {
 
   return (
     <div className="w-[420px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
-      <Handle type="target" position={Position.Top} className="w-2 h-2 bg-brand border-none" />
+      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       <div className="bg-[#1A1A1C] px-4 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center space-x-3">
           <div className="w-6 h-6 rounded flex items-center justify-center bg-blue-500/20 text-blue-400">
@@ -89,72 +140,43 @@ export const CharacterNode = ({ id, data }: any) => {
           </button>
         </div>
       </div>
-      <div className="p-4 grid grid-cols-2 gap-4">
-          <div className="space-y-4">
-            <div className="flex items-baseline justify-between">
-                <h4 className="text-[13px] font-bold text-slate-200">角色1: {characters[0]?.name || '未来宇航少女'}</h4>
-                <button className="text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
-            </div>
-            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {characters[0]?.prompt || '外貌：一头柔顺的粉色长发，在失重环境中轻轻飘逸，身着设计精良、线条流畅的白色宇航服，其上点缀着未来科技感的蓝色光带...'}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[1,2,3,4].map(i => (
-                <div key={i} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${i===1?'border-brand shadow-[0_0_10px_rgba(16,185,129,0.2)]':'border-white/5'} overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all`}>
-                  <img src={`https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80&auto=format&fit=crop&crop=face&seed=${i}`} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Pose" />
-                  
-                  {/* Hover Actions */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-between p-1.5 transition-opacity">
-                    <div className="flex justify-end">
-                      <button className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="高清看图">
-                        <Maximize2 size={12} />
-                      </button>
-                    </div>
-                    <div className="flex flex-col space-y-1">
-                      <button className="w-full py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[6px] text-[10px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
-                        <Video size={10} />
-                        <span>生成视频</span>
-                      </button>
-                      <button className="w-full py-1 bg-white/10 hover:bg-white/20 backdrop-blur text-slate-300 hover:text-white rounded-[6px] text-[10px] transition-colors">
-                        设为主角色
-                      </button>
-                    </div>
-                  </div>
+      <div className={`p-4 ${characters.length > 1 ? 'grid grid-cols-2 gap-4' : 'space-y-4'}`}>
+          {characters.length > 0 ? characters.slice(0, 4).map((character: any, characterIndex: number) => {
+            const images = getImageUrls(character.images, character.variants, character.thumbnailUrl, character.imageUrl, character.url).slice(0, 4);
+            return (
+              <div key={character.id || character.name || characterIndex} className="space-y-4">
+                <div className="flex items-baseline justify-between gap-3">
+                    <h4 className="min-w-0 truncate text-[13px] font-bold text-slate-200">角色{characterIndex + 1}: {getString(character.name, character.title, '未命名角色')}</h4>
+                    <button className="shrink-0 text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
                 </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-baseline justify-between">
-                <h4 className="text-[13px] font-bold text-slate-200">角色2: {characters[1]?.name || '机器小猫'}</h4>
-                <button className="text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
-            </div>
-            <p className="text-[11px] text-slate-400 line-clamp-2 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {characters[1]?.prompt || '一只拥有金属外壳和蓝色电子眼的机器小猫，小巧可爱，但因为故障而显得非常害怕和脆弱。'}</p>
-            <div className="grid grid-cols-2 gap-2">
-                <div className="aspect-[4/3] rounded-xl bg-slate-900 border border-white/5 overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all">
-                  <img src="https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=400&auto=format&fit=crop" className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Cat" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-end p-1.5 transition-opacity">
-                      <button className="w-full py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[6px] text-[10px] font-medium transition-colors flex items-center justify-center space-x-1">
-                        <Video size={10} />
-                        <span>生成视频</span>
-                      </button>
-                  </div>
-                </div>
-                <div className="aspect-[4/3] rounded-xl bg-slate-900 border border-brand/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] overflow-hidden relative group/img cursor-pointer hover:border-brand transition-all">
-                  <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-brand text-white rounded text-[9px] font-bold z-10">SELECTED</span>
-                  <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop" className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt="Bot" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-end p-2 transition-opacity">
-                      <div className="flex space-x-2">
-                        <button className="flex-1 py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[8px] text-[11px] font-medium transition-colors flex items-center justify-center space-x-1">
-                          <Video size={12} />
-                          <span>生成视频</span>
-                        </button>
-                        <button className="px-2 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur rounded-[8px] text-white transition-colors">
-                          <Maximize2 size={12} />
-                        </button>
+                <p className="text-[11px] text-slate-400 line-clamp-3 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {getString(character.prompt, character.description, '后端暂未返回角色提示词。')}</p>
+                {images.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {images.map((imageUrl, imageIndex) => (
+                      <div key={imageUrl} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${imageIndex===0?'border-brand shadow-[0_0_10px_rgba(16,185,129,0.2)]':'border-white/5'} overflow-hidden relative group/img cursor-pointer hover:border-brand/50 transition-all`}>
+                        <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt={getString(character.name, 'Character asset')} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-between p-1.5 transition-opacity">
+                          <div className="flex justify-end">
+                            <button className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="高清看图">
+                              <Maximize2 size={12} />
+                            </button>
+                          </div>
+                          <button className="w-full py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[6px] text-[10px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
+                            <Video size={10} />
+                            <span>生成视频</span>
+                          </button>
+                        </div>
                       </div>
+                    ))}
                   </div>
-                </div>
-            </div>
-          </div>
+                ) : (
+                  <EmptyState>角色图像尚未生成。</EmptyState>
+                )}
+              </div>
+            );
+          }) : (
+            <EmptyState>等待后端返回角色设定与一致性素材。</EmptyState>
+          )}
       </div>
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
@@ -183,11 +205,7 @@ export const StoryboardNode = ({ id, data }: any) => {
         </button>
       </div>
       <div className="p-4 space-y-3">
-        {(scenes.length ? scenes : [
-          { shot: '01', duration: '2s', content: '等待 Agent 生成建立镜头。' },
-          { shot: '02', duration: '3s', content: '等待 Agent 生成角色动作。' },
-          { shot: '03', duration: '3s', content: '等待 Agent 生成结尾镜头。' },
-        ]).map((scene: any) => (
+        {scenes.length > 0 ? scenes.map((scene: any) => (
           <div key={scene.shot} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3">
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[11px] font-bold text-brand">Shot {scene.shot}</span>
@@ -195,7 +213,7 @@ export const StoryboardNode = ({ id, data }: any) => {
             </div>
             <p className="text-[12px] leading-5 text-slate-300">{scene.content}</p>
           </div>
-        ))}
+        )) : <EmptyState>等待后端返回分镜结果。</EmptyState>}
         {data?.output?.camera && <p className="text-[11px] text-slate-500">运镜：{data.output.camera}</p>}
       </div>
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
@@ -207,10 +225,16 @@ export const ImagesNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
   const title = data?.title || (data?.imageSrc ? '生成分镜视频' : '场景概念图生成');
   const status = data?.status || 'idle';
-  const imageSrc = data?.imageSrc || data?.output?.thumbnailUrl;
+  const videoUrl = withAuthQuery(getString(data?.output?.url, data?.output?.videoUrl));
+  const thumbnailSrc = withAuthQuery(getString(data?.imageSrc, data?.output?.thumbnailUrl));
+  const imageSrc = thumbnailSrc;
+  const imageUrls = getImageUrls(data?.output?.images, data?.output?.frames, data?.output?.assets, data?.output?.thumbnailUrl, data?.output?.imageUrl, data?.output?.url)
+    .map(withAuthQuery)
+    .slice(0, 8);
+  const isVideoNode = data?.nodeType === 'video' || title.includes('视频') || getString(data?.output?.mediaType) === 'video';
 
   // 如果是视频节点
-  if (imageSrc || data?.type === 'video' || title.includes('视频')) {
+  if (isVideoNode) {
     return (
       <div className="w-[320px] bg-[#111112] p-3 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
         <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
@@ -241,20 +265,30 @@ export const ImagesNode = ({ id, data }: any) => {
         </div>
 
         <div className="aspect-video w-full rounded-xl bg-slate-900 overflow-hidden relative border border-white/5 cursor-pointer group/video">
-           <img src={imageSrc || 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop'} className="w-full h-full object-cover" alt="Node media" />
-           <div className="absolute inset-0 bg-black/20 group-hover/video:bg-black/50 transition-colors flex items-center justify-center">
-              <div className="w-12 h-12 rounded-full bg-brand/90 backdrop-blur-md flex items-center justify-center transform group-hover/video:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.4)] border border-white/10">
-                <Play size={22} className="fill-white text-white ml-1" />
-              </div>
-           </div>
-           
-           {/* Bottom action tags */}
-           <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center opacity-0 group-hover/video:opacity-100 transition-opacity">
-              <span className="px-2 py-1 bg-black/70 backdrop-blur-md rounded-[6px] text-[10px] text-white font-medium">00:04s · 1080P</span>
-              <button className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip">
-                 <Maximize2 size={12} />
-              </button>
-           </div>
+           {imageSrc ? (
+             <>
+               {videoUrl ? (
+                 <video src={videoUrl} poster={imageSrc} controls preload="metadata" className="w-full h-full object-cover" />
+               ) : (
+                 <>
+                   <img src={imageSrc} className="w-full h-full object-cover" alt="Node media" />
+                   <div className="absolute inset-0 bg-black/20 group-hover/video:bg-black/50 transition-colors flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full bg-brand/90 backdrop-blur-md flex items-center justify-center transform group-hover/video:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.4)] border border-white/10">
+                        <Play size={22} className="fill-white text-white ml-1" />
+                      </div>
+                   </div>
+                 </>
+               )}
+               <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center opacity-0 group-hover/video:opacity-100 transition-opacity">
+                  <span className="px-2 py-1 bg-black/70 backdrop-blur-md rounded-[6px] text-[10px] text-white font-medium">{getString(data?.output?.duration, '预览')}</span>
+                  <button className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip">
+                     <Maximize2 size={12} />
+                  </button>
+               </div>
+             </>
+           ) : (
+             <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-slate-500">等待后端返回视频预览。</div>
+           )}
         </div>
         <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
       </div>
@@ -285,34 +319,34 @@ export const ImagesNode = ({ id, data }: any) => {
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {[1,2,3,4].map(i => (
-          <div key={i} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${i===1?'border-brand shadow-[0_0_15px_rgba(16,185,129,0.2)]':'border-white/5 hover:border-white/20'} overflow-hidden relative group/inner cursor-pointer transition-all`}>
-            {i === 1 && <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-brand text-white rounded text-[9px] font-bold z-10">Best Match</span>}
-            <img src={`https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80&auto=format&fit=crop&crop=face&seed=${i + 10}`} className="w-full h-full object-cover transition-transform duration-500 group-hover/inner:scale-110" alt="Var" />
-            
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent opacity-0 group-hover/inner:opacity-100 transition-opacity flex flex-col justify-between p-1.5">
-              <div className="flex justify-end">
-                 <button className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="高清大图">
-                    <Maximize2 size={12} />
-                 </button>
-              </div>
-              <div className="flex flex-col space-y-1.5">
-                 <button className="w-full py-1.5 bg-brand hover:bg-brand/90 text-white rounded-[8px] text-[11px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
-                    <Video size={12} />
-                    <span>图生视频 (Animate)</span>
-                 </button>
-                 <div className="flex space-x-1.5">
-                    <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
-                    <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors flex items-center justify-center">
-                      <Download size={10} />
-                    </button>
-                 </div>
+      {imageUrls.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3">
+          {imageUrls.map((url, i) => (
+            <div key={url} className={`aspect-[3/4] rounded-xl bg-slate-900 border ${i===0?'border-brand shadow-[0_0_15px_rgba(16,185,129,0.2)]':'border-white/5 hover:border-white/20'} overflow-hidden relative group/inner cursor-pointer transition-all`}>
+              <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover/inner:scale-110" alt="Generated asset" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent opacity-0 group-hover/inner:opacity-100 transition-opacity flex flex-col justify-between p-1.5">
+                <div className="flex justify-end">
+                   <button className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="高清大图">
+                      <Maximize2 size={12} />
+                   </button>
+                </div>
+                <div className="flex flex-col space-y-1.5">
+                   <button className="w-full py-1.5 bg-brand hover:bg-brand/90 text-white rounded-[8px] text-[11px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
+                      <Video size={12} />
+                      <span>图生视频 (Animate)</span>
+                   </button>
+                   <div className="flex space-x-1.5">
+                      <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
+                      <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors flex items-center justify-center">
+                        <Download size={10} />
+                      </button>
+                   </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : <EmptyState>等待后端返回图像结果。</EmptyState>}
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
   );
@@ -322,6 +356,9 @@ export const AudioNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
   const title = data?.title || '生成音效配乐';
   const status = data?.status || 'idle';
+  const prompt = getString(data?.output?.prompt, data?.output?.summary);
+  const audioUrl = getString(data?.output?.audioUrl, data?.output?.url);
+  const duration = getString(data?.output?.duration);
 
   return (
     <div className="w-[300px] bg-[#111112] p-4 rounded-2xl border border-white/10 shadow-2xl group relative hover:border-brand/40 transition-all">
@@ -341,8 +378,8 @@ export const AudioNode = ({ id, data }: any) => {
       </div>
 
       <div className="bg-[#1A1A1C] p-3 rounded-xl border border-white/5 space-y-3">
-         <p className="text-[11px] text-slate-400">Prompt: {data?.output?.prompt || '悠远的电子合成器音效，带着空灵的宇宙回响，适合太空场景'}</p>
-         <div className="h-10 bg-slate-900 border border-white/5 rounded-lg flex items-center px-3 space-x-3 group/audio cursor-pointer hover:border-brand/50 transition-colors">
+         <p className="text-[11px] text-slate-400">{prompt ? `Prompt: ${prompt}` : '等待后端返回声音设计。'}</p>
+         {audioUrl ? <div className="h-10 bg-slate-900 border border-white/5 rounded-lg flex items-center px-3 space-x-3 group/audio cursor-pointer hover:border-brand/50 transition-colors">
             <button className="w-6 h-6 bg-brand rounded-full flex items-center justify-center">
               <Play size={10} className="fill-white text-white ml-0.5" />
             </button>
@@ -351,8 +388,8 @@ export const AudioNode = ({ id, data }: any) => {
                  <div key={i} className="w-1 bg-brand/60 rounded-full" style={{ height: `${h * 1.5}px` }} />
                ))}
             </div>
-            <span className="text-[9px] text-slate-500 font-mono">00:08</span>
-         </div>
+            <span className="text-[9px] text-slate-500 font-mono">{duration || 'audio'}</span>
+         </div> : null}
       </div>
       
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
@@ -364,7 +401,7 @@ export const FinalVideoNode = ({ id, data }: any) => {
   const { setNodes } = useReactFlow();
   const title = data?.title || '成片合成';
   const status = data?.status || 'idle';
-  const thumbnail = data?.output?.thumbnailUrl || 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop';
+  const thumbnail = getString(data?.output?.thumbnailUrl, data?.output?.imageUrl);
 
   return (
     <div className="w-[340px] bg-[#111112] rounded-2xl border border-brand/30 shadow-[0_0_36px_rgba(16,185,129,0.12)] overflow-hidden group">
@@ -383,12 +420,20 @@ export const FinalVideoNode = ({ id, data }: any) => {
       </div>
       <div className="p-3">
         <div className="aspect-video overflow-hidden rounded-xl border border-white/5 bg-slate-900 relative">
-          <img src={thumbnail} className="h-full w-full object-cover" alt="Final video" />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-            <div className="w-12 h-12 rounded-full bg-brand/90 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-              <Play size={22} className="fill-white text-white ml-1" />
+          {thumbnail ? (
+            <>
+              <img src={thumbnail} className="h-full w-full object-cover" alt="Final video" />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <div className="w-12 h-12 rounded-full bg-brand/90 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                  <Play size={22} className="fill-white text-white ml-1" />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-slate-500">
+              等待后端返回成片预览。
             </div>
-          </div>
+          )}
         </div>
         <p className="mt-3 text-[12px] leading-5 text-slate-300">{data?.output?.summary || '等待合成结果。'}</p>
       </div>

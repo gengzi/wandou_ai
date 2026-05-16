@@ -5,6 +5,10 @@ import com.wandou.ai.asset.dto.AssetCreateRequest;
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.common.ApiResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,5 +47,31 @@ public class AssetController {
         return assetService.get(assetId)
                 .map(ApiResponse::ok)
                 .orElseGet(() -> ApiResponse.fail("asset not found"));
+    }
+
+    @GetMapping("/{assetId}/content")
+    @SaCheckPermission("asset:read")
+    public ResponseEntity<byte[]> content(@PathVariable String assetId) {
+        return assetService.loadContent(assetId, false)
+                .map(this::toResponse)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{assetId}/thumbnail")
+    @SaCheckPermission("asset:read")
+    public ResponseEntity<byte[]> thumbnail(@PathVariable String assetId) {
+        return assetService.loadContent(assetId, true)
+                .map(this::toResponse)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private ResponseEntity<byte[]> toResponse(AssetService.StoredAssetContent content) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(content.filename())
+                        .build()
+                        .toString())
+                .body(content.bytes());
     }
 }

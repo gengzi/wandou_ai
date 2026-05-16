@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle } from 'lucide-react';
-import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap } from '@xyflow/react';
+import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, getCanvas, getConversation, getProject, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
+import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, generateChat, generateImage, generateVideo, getCanvas, getConversation, getProject, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -15,59 +15,19 @@ const nodeTypes = {
   final: FinalVideoNode,
 };
 
+const canvasSections = ['总览', '图片/视频', '剧本', '角色', '分镜', '视频'] as const;
+type CanvasSection = typeof canvasSections[number];
+
 const initialNodes: Node[] = [
   {
     id: 'script-1',
     type: 'script',
     position: { x: 80, y: 120 },
     data: {},
-  },
-  {
-    id: 'char-1',
-    type: 'character',
-    position: { x: 480, y: 120 },
-    data: {},
-  },
-  {
-    id: 'img-1',
-    type: 'images',
-    position: { x: 940, y: 120 },
-    data: {},
-  },
-  {
-    id: 'audio-1',
-    type: 'audio',
-    position: { x: 940, y: 500 },
-    data: {},
   }
 ];
 
-const initialEdges: Edge[] = [
-  {
-    id: 'e-script-char',
-    source: 'script-1',
-    target: 'char-1',
-    type: 'default',
-    animated: true,
-    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' }
-  },
-  {
-    id: 'e-char-img',
-    source: 'char-1',
-    target: 'img-1',
-    type: 'default',
-    animated: true,
-    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' }
-  },
-  {
-    id: 'e-script-audio',
-    source: 'script-1',
-    target: 'audio-1',
-    type: 'default',
-    animated: true,
-    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' }
-  }
-];
+const initialEdges: Edge[] = [];
 
 interface Message {
   id: string;
@@ -99,9 +59,36 @@ interface ConfirmationState {
   message: string;
 }
 
+interface StepOutputState {
+  step: string;
+  title: string;
+  content: string;
+  output: Record<string, unknown>;
+}
+
 interface WorkspaceViewProps {
   initialPrompt?: string;
   projectId?: string;
+}
+
+function getString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return '';
+}
+
+function sourceLabel(output?: Record<string, unknown>) {
+  const source = getString(output?.modelSource);
+  if (source === 'configured-text-model') {
+    return getString(output?.modelDisplayName, output?.modelName, '已配置文本模型');
+  }
+  if (source === 'template-fallback') {
+    return '模板 fallback';
+  }
+  return '';
 }
 
 function toFlowNode(node: CanvasNodeResponse): Node {
@@ -112,12 +99,24 @@ function toFlowNode(node: CanvasNodeResponse): Node {
     position: node.position,
     data: {
       ...node.data,
+      nodeType: flowType,
       title: node.title,
       status: node.status,
       output: node.output,
+      updatedAt: node.updatedAt,
       imageSrc: typeof node.output?.thumbnailUrl === 'string' ? node.output.thumbnailUrl : undefined,
     },
   };
+}
+
+function sectionForNode(node?: Node | null): CanvasSection {
+  if (!node) return '总览';
+  if (node.type === 'script') return '剧本';
+  if (node.type === 'character') return '角色';
+  if (node.type === 'storyboard') return '分镜';
+  if (node.type === 'video' || node.type === 'final') return '视频';
+  if (node.type === 'images' || node.type === 'audio') return '图片/视频';
+  return '总览';
 }
 
 function toFlowEdge(edge: CanvasEdgeResponse): Edge {
@@ -125,9 +124,15 @@ function toFlowEdge(edge: CanvasEdgeResponse): Edge {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: 'default',
-    animated: true,
-    style: { stroke: '#6b7280', strokeWidth: 1.5, strokeDasharray: '4 4' },
+    type: 'smoothstep',
+    animated: false,
+    style: { stroke: '#64748b', strokeWidth: 1.2, opacity: 0.55 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: '#64748b',
+      width: 14,
+      height: 14,
+    },
   };
 }
 
@@ -162,6 +167,32 @@ function toAsset(asset: AssetResponse): AssetItem {
   };
 }
 
+function looksLikeCreativeCommand(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return false;
+  const casualMessages = new Set(['你好', '您好', 'hi', 'hello', 'hey', '在吗', '谢谢', 'ok', '好的']);
+  if (casualMessages.has(normalized)) return false;
+  const creativeKeywords = [
+    '生成', '制作', '创建', '做一个', '帮我做', '写一个', '出一个',
+    '视频', '短片', '广告', '分镜', '剧本', '脚本', '角色', '关键帧',
+    '海报', '图片', '生图', '图生视频', '文生视频', '配音', '音乐', '音效',
+  ];
+  return creativeKeywords.some((keyword) => normalized.includes(keyword));
+}
+
+function looksLikeImageCommand(message: string): boolean {
+  return ['图片', '生图', '海报', '插画', '照片', '图像', '关键帧', '概念图'].some((keyword) => message.includes(keyword));
+}
+
+function looksLikeVideoCommand(message: string): boolean {
+  return ['视频', '短片', '广告片', '图生视频', '文生视频', '成片', '8秒', '10秒'].some((keyword) => message.includes(keyword));
+}
+
+function looksLikeAgentWorkflowCommand(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return ['完整流程', 'agent run', '分镜', '剧本', '三段确认', '工作流'].some((keyword) => normalized.includes(keyword));
+}
+
 export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -177,14 +208,25 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<string>('idle');
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
+  const [stepOutputs, setStepOutputs] = useState<Record<string, StepOutputState>>({});
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const processedEventIdsRef = useRef<Set<string>>(new Set());
+  const stepOutputsRef = useRef<Record<string, StepOutputState>>({});
   const autoStartedPromptRef = useRef<string>('');
 
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
+  const highlightedCanvasSection = selectedNode ? sectionForNode(selectedNode) : activeCanvasSection;
   const runningTaskCount = tasks.filter(task => task.status === 'running').length;
+  const confirmationStep = confirmation ? stepOutputs[confirmation.checkpoint] : null;
+  const confirmationOutput = confirmationStep?.output;
+  const confirmationSummary = getString(confirmationOutput?.summary, confirmationStep?.content, confirmation?.message);
+  const confirmationStyle = getString(confirmationOutput?.style);
+  const confirmationBeats = Array.isArray(confirmationOutput?.beats) ? confirmationOutput.beats.slice(0, 3).map(String) : [];
+  const confirmationSource = sourceLabel(confirmationOutput);
   const runStatusText = confirmation
     ? confirmation.message
     : runStatus === 'interrupted'
@@ -195,7 +237,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           ? '本次生成已取消。'
           : runStatus === 'failed'
             ? '本次生成失败，请查看后端错误。'
-            : '多 Agent 生成流程运行中';
+            : activeRunId
+              ? '多 Agent 生成流程运行中'
+              : '等待创作指令';
 
   const upsertEdge = useCallback((edge: CanvasEdgeResponse) => {
     const nextEdge = toFlowEdge(edge);
@@ -235,6 +279,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
+    setActiveCanvasSection(sectionForNode(node));
     const output = node.data?.output as Record<string, unknown> | undefined;
     const prompt = typeof output?.prompt === 'string' ? output.prompt : '';
     setNodeInstruction(prompt);
@@ -243,6 +288,38 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
   }, []);
+
+  const focusCanvasSection = useCallback((section: CanvasSection) => {
+    setActiveCanvasSection(section);
+    if (section === '总览') {
+      setSelectedNodeId(null);
+      flowInstance?.fitView({ duration: 450, padding: 0.22 });
+      return;
+    }
+
+    const candidates = nodes.filter((node) => sectionForNode(node) === section);
+    const preferred = candidates.find((node) => node.data?.status === 'running')
+      || [...candidates].sort((left, right) => {
+        const leftTime = Date.parse(String(left.data?.updatedAt || ''));
+        const rightTime = Date.parse(String(right.data?.updatedAt || ''));
+        return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+      })[0];
+
+    if (!preferred) {
+      setSetupError(`${section} 节点还没有生成，发送创作指令后会自动出现。`);
+      return;
+    }
+
+    setSetupError(null);
+    setSelectedNodeId(preferred.id);
+    const output = preferred.data?.output as Record<string, unknown> | undefined;
+    setNodeInstruction(typeof output?.prompt === 'string' ? output.prompt : '');
+    flowInstance?.setCenter(
+      preferred.position.x + 180,
+      preferred.position.y + 130,
+      { duration: 450, zoom: section === '视频' ? 0.78 : 0.9 }
+    );
+  }, [flowInstance, nodes]);
 
   const applyCanvas = useCallback((canvas: CanvasResponse) => {
     setNodes(canvas.nodes.map(toFlowNode));
@@ -315,7 +392,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     });
   }, [setNodes]);
 
-  const updateNodeFromEvent = useCallback((nodeId: string, status?: string, output?: Record<string, unknown>) => {
+  const updateNodeFromEvent = useCallback((nodeId: string, status?: string, output?: Record<string, unknown>, updatedAt?: string) => {
     setNodes((currentNodes) => currentNodes.map((node) => {
       if (node.id !== nodeId) return node;
       const nextOutput = output ? { ...(node.data?.output as Record<string, unknown> | undefined), ...output } : node.data?.output;
@@ -325,6 +402,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           ...node.data,
           status: status || node.data?.status,
           output: nextOutput,
+          updatedAt: updatedAt || new Date().toISOString(),
           imageSrc: typeof nextOutput?.thumbnailUrl === 'string' ? nextOutput.thumbnailUrl : node.data?.imageSrc,
         },
       };
@@ -377,6 +455,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     if (event.event === 'node.created' && data.node) {
       upsertNode(data.node);
+      setActiveCanvasSection(sectionForNode(toFlowNode(data.node)));
     }
 
     if (event.event === 'edge.created' && data.edge) {
@@ -384,10 +463,14 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
 
     if (event.event === 'node.updated') {
-      updateNodeFromEvent(data.nodeId, data.status, data.output);
+      updateNodeFromEvent(data.nodeId, data.status, data.output, event.createdAt);
+      const currentNode = nodes.find((node) => node.id === data.nodeId);
+      if (currentNode) {
+        setActiveCanvasSection(sectionForNode(currentNode));
+      }
     }
 
-    if (event.event === 'task.created' || event.event === 'task.progress' || event.event === 'task.completed') {
+    if (event.event === 'task.created' || event.event === 'task.progress' || event.event === 'task.completed' || event.event === 'task.failed') {
       upsertTask(data.task);
     }
 
@@ -400,6 +483,23 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         content: `开始：${data.title || data.step}`,
         timestamp: new Date(event.createdAt),
       }]);
+    }
+
+    if (event.event === 'agent.step.completed') {
+      const step = String(data.step || '');
+      if (step) {
+        const nextStepOutput: StepOutputState = {
+          step,
+          title: String(data.title || step),
+          content: String(data.content || ''),
+          output: (data.output && typeof data.output === 'object') ? data.output as Record<string, unknown> : {},
+        };
+        stepOutputsRef.current = {
+          ...stepOutputsRef.current,
+          [step]: nextStepOutput,
+        };
+        setStepOutputs(stepOutputsRef.current);
+      }
     }
 
     if (event.event === 'agent.confirmation.required') {
@@ -434,7 +534,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         assetId: asset.id,
         thumbnailUrl: asset.thumbnailUrl,
         url: asset.url,
-      });
+      }, event.createdAt);
     }
 
     if (event.event === 'run.completed' || event.event === 'run.failed' || event.event === 'run.cancelled') {
@@ -445,7 +545,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       eventSourceRef.current = null;
       setActiveRunId(null);
     }
-  }, [updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
+  }, [nodes, updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
 
   const runAgent = useCallback(async (message: string, options?: { mode?: string; nodeId?: string }) => {
     if (!message.trim()) return;
@@ -465,11 +565,49 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
+
     setIsTyping(true);
 
     try {
+      const useAgentWorkflow = Boolean(options?.mode) || looksLikeAgentWorkflowCommand(cleanMessage);
+      if (!useAgentWorkflow) {
+        setRunStatus('running');
+        const payload = {
+          projectId: project.id,
+          conversationId: project.conversationId,
+          canvasId: project.canvasId,
+          prompt: cleanMessage,
+        };
+        const result = looksLikeVideoCommand(cleanMessage)
+          ? await generateVideo(payload)
+          : looksLikeImageCommand(cleanMessage) || looksLikeCreativeCommand(cleanMessage)
+            ? await generateImage(payload)
+            : await generateChat(payload);
+
+        setMessages(prev => [...prev, {
+          id: `assistant-direct-${Date.now()}`,
+          sender: result.type === 'image' ? '图片生成' : result.type === 'video' ? '视频生成' : '对话助手',
+          role: 'agent',
+          content: result.message,
+          timestamp: new Date(),
+        }]);
+        if (result.node) {
+          upsertNode(result.node);
+          setActiveCanvasSection(sectionForNode(toFlowNode(result.node)));
+        }
+        if (result.asset) {
+          const asset = toAsset(result.asset);
+          setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+        }
+        setRunStatus('success');
+        setIsTyping(false);
+        return;
+      }
+
       eventSourceRef.current?.close();
       processedEventIdsRef.current = new Set();
+      stepOutputsRef.current = {};
+      setStepOutputs({});
       const run = await startAgentRun({
         projectId: project.id,
         conversationId: project.conversationId,
@@ -502,6 +640,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         'task.created',
         'task.progress',
         'task.completed',
+        'task.failed',
+        'video.provider.submitted',
         'asset.created',
         'run.completed',
         'run.failed',
@@ -530,7 +670,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       }]);
       setIsTyping(false);
     }
-  }, [handleRunEvent, project]);
+  }, [handleRunEvent, project, upsertNode]);
 
   const handleConfirmRun = async () => {
     if (!activeRunId) return;
@@ -651,7 +791,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <div className="flex items-center space-x-2">
                 <BrainCircuit size={14} className="text-brand animate-pulse" />
-                <span className="text-xs font-bold text-slate-300">后台运行中 ({runningTaskCount})</span>
+                <span className="text-xs font-bold text-slate-300">
+                  {runningTaskCount > 0 ? `后台运行中 (${runningTaskCount})` : '后台任务'}
+                </span>
               </div>
               <span className="text-[10px] text-slate-500">Queue</span>
             </div>
@@ -662,7 +804,13 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <div key={task.id} className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <div className="flex items-center space-x-2 text-slate-400 min-w-0">
-                      <div className={`w-1.5 h-1.5 rounded-full ${task.status === 'success' ? 'bg-brand' : 'bg-brand animate-pulse'}`} />
+                      <div className={`w-1.5 h-1.5 rounded-full ${
+                        task.status === 'success'
+                          ? 'bg-brand'
+                          : task.status === 'failed'
+                            ? 'bg-red-400'
+                            : 'bg-brand animate-pulse'
+                      }`} />
                       <span className="truncate">{task.message}</span>
                     </div>
                     <span className="text-slate-500 font-mono">{task.progress}%</span>
@@ -694,48 +842,36 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
 
               {confirmation && (
-                <div className="rounded-lg border border-brand/30 bg-brand/10 p-3 text-[12px] leading-5 text-brand">
-                  检查点：{confirmation.checkpoint}
+                <div className="space-y-3 rounded-lg border border-brand/30 bg-brand/10 p-3 text-[12px] leading-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-bold text-brand">检查点：{confirmation.checkpoint}</span>
+                    {confirmationSource && (
+                      <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[10px] ${
+                        confirmationSource === '模板 fallback'
+                          ? 'border-yellow-300/30 bg-yellow-300/10 text-yellow-200'
+                          : 'border-brand/30 bg-brand/15 text-brand'
+                      }`}>
+                        {confirmationSource}
+                      </span>
+                    )}
+                  </div>
+                  {confirmationSummary && (
+                    <p className="text-slate-200">{confirmationSummary}</p>
+                  )}
+                  {confirmationStyle && (
+                    <p className="text-slate-400">风格：{confirmationStyle}</p>
+                  )}
+                  {confirmationBeats.length > 0 && (
+                    <div className="space-y-1.5">
+                      {confirmationBeats.map((beat, index) => (
+                        <div key={`${confirmation.checkpoint}-${index}`} className="rounded-md bg-black/20 px-2 py-1.5 text-slate-300">
+                          {index + 1}. {beat}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={handleConfirmRun}
-                  disabled={!activeRunId || !confirmation || runStatus === 'interrupted'}
-                  className="flex items-center justify-center space-x-1.5 rounded-lg bg-brand px-3 py-2 text-[12px] font-bold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <CheckCircle2 size={14} />
-                  <span>确认继续</span>
-                </button>
-                {runStatus === 'interrupted' ? (
-                  <button
-                    onClick={handleResumeRun}
-                    disabled={!activeRunId}
-                    className="flex items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <RefreshCw size={14} />
-                    <span>恢复</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleInterruptRun}
-                    disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
-                    className="flex items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <PauseCircle size={14} />
-                    <span>打断</span>
-                  </button>
-                )}
-                <button
-                  onClick={handleCancelRun}
-                  disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
-                  className="col-span-2 flex items-center justify-center space-x-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-bold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <XCircle size={14} />
-                  <span>取消本次生成</span>
-                </button>
-              </div>
             </div>
           )}
 
@@ -788,6 +924,45 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           
           {/* Chat Input */}
           <div className="p-4 border-t border-white/5 bg-[#121213]">
+            {(activeRunId || confirmation) && (
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <button
+                  onClick={handleConfirmRun}
+                  disabled={!activeRunId || !confirmation || runStatus === 'interrupted'}
+                  className="flex h-9 items-center justify-center space-x-1.5 rounded-lg bg-brand px-3 text-[12px] font-bold text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>确认</span>
+                </button>
+                {runStatus === 'interrupted' ? (
+                  <button
+                    onClick={handleResumeRun}
+                    disabled={!activeRunId}
+                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RefreshCw size={14} />
+                    <span>恢复</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleInterruptRun}
+                    disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                    className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[12px] font-bold text-slate-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <PauseCircle size={14} />
+                    <span>打断</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleCancelRun}
+                  disabled={!activeRunId || runStatus === 'success' || runStatus === 'cancelled' || runStatus === 'failed'}
+                  className="flex h-9 items-center justify-center space-x-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 text-[12px] font-bold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <XCircle size={14} />
+                  <span>取消</span>
+                </button>
+              </div>
+            )}
             <div className="flex items-center px-4 py-2 rounded-2xl bg-[#1A1A1C] border border-white/5 focus-within:border-white/20 transition-colors group relative">
               <button className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-1 relative">
                 <Paperclip size={16} />
@@ -837,12 +1012,16 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <ReactFlowProvider>
                   {/* Left Canvas Nav */}
                   <div className="absolute left-6 top-6 z-20 hidden xl:flex flex-col space-y-5 rounded-2xl border border-white/10 bg-[#0B0B0C]/70 px-4 py-4 backdrop-blur">
-                     {['总览', '图片/视频', '剧本', '角色', '分镜', '视频'].map((item) => (
-                        <div key={item} 
-                             className="flex items-center space-x-4 cursor-pointer group">
-                           <div className={`w-1.5 h-1.5 rounded-full ${item === '角色' ? 'bg-brand shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-slate-600 group-hover:bg-slate-400'} transition-all`} />
-                           <span className={`text-[13px] tracking-wide ${item === '角色' ? 'text-white font-medium' : 'text-slate-400 group-hover:text-slate-300'} transition-colors`}>{item}</span>
-                        </div>
+                     {canvasSections.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => focusCanvasSection(item)}
+                          className="group flex items-center space-x-4 text-left"
+                        >
+                           <div className={`h-1.5 w-1.5 rounded-full ${item === highlightedCanvasSection ? 'bg-brand shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-slate-600 group-hover:bg-slate-400'} transition-all`} />
+                           <span className={`text-[13px] tracking-wide ${item === highlightedCanvasSection ? 'font-medium text-white' : 'text-slate-400 group-hover:text-slate-300'} transition-colors`}>{item}</span>
+                        </button>
                      ))}
                   </div>
 
@@ -855,6 +1034,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     onNodeClick={handleNodeClick}
                     onNodeDragStop={handleNodeDragStop}
                     onPaneClick={handlePaneClick}
+                    onInit={setFlowInstance}
                     nodeTypes={nodeTypes}
                     minZoom={0.1}
                     maxZoom={2}
@@ -1018,15 +1198,6 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
             </div>
 
-            {/* Navigation Menu (Left Floating) */}
-            <div className="hidden">
-               {['总览', '图片/视频', '剧本', '角色', '分镜', '视频'].map((item, i) => (
-                  <div key={item} className={`flex items-center space-x-3 transition-colors cursor-pointer group pointer-events-auto`}>
-                    <div className={`w-1 h-1 rounded-full ${i === 3 ? 'bg-brand' : 'bg-slate-700 group-hover:bg-slate-400'}`} />
-                    <span className={`text-[11px] font-medium ${i === 3 ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>{item}</span>
-                  </div>
-               ))}
-            </div>
           </div>
     </div>
   );

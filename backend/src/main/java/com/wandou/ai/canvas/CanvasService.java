@@ -27,44 +27,11 @@ public class CanvasService {
                 "script",
                 "智能剧本生成",
                 "idle",
-                new PositionResponse(80, 120),
+                new PositionResponse(80, 260),
                 Map.of("title", "智能剧本生成", "status", "idle"),
                 Map.of(),
                 Instant.now()
         ));
-        canvas.nodes.add(new CanvasNodeResponse(
-                "char-1",
-                "character",
-                "角色一致性生成",
-                "idle",
-                new PositionResponse(480, 120),
-                Map.of("title", "角色一致性生成", "status", "idle"),
-                Map.of(),
-                Instant.now()
-        ));
-        canvas.nodes.add(new CanvasNodeResponse(
-                "img-1",
-                "images",
-                "场景概念图生成",
-                "idle",
-                new PositionResponse(940, 120),
-                Map.of("title", "场景概念图生成", "status", "idle"),
-                Map.of(),
-                Instant.now()
-        ));
-        canvas.nodes.add(new CanvasNodeResponse(
-                "audio-1",
-                "audio",
-                "生成音效配乐",
-                "idle",
-                new PositionResponse(940, 500),
-                Map.of("title", "生成音效配乐", "status", "idle"),
-                Map.of(),
-                Instant.now()
-        ));
-        canvas.edges.add(new CanvasEdgeResponse("e-script-char", "script-1", "char-1"));
-        canvas.edges.add(new CanvasEdgeResponse("e-char-img", "char-1", "img-1"));
-        canvas.edges.add(new CanvasEdgeResponse("e-script-audio", "script-1", "audio-1"));
         canvases.put(canvasId, canvas);
         return canvas.toResponse();
     }

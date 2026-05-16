@@ -41,6 +41,8 @@ public class UserDataInitializer implements ApplicationRunner {
                 permission("asset:read", "Read assets"),
                 permission("asset:write", "Write assets"),
                 permission("task:read", "Read tasks"),
+                permission("model:read", "Read model configs"),
+                permission("model:write", "Write model configs"),
                 permission("user:read", "Read users"),
                 permission("user:write", "Write users")
         );
@@ -57,6 +59,7 @@ public class UserDataInitializer implements ApplicationRunner {
 
         createUserIfMissing("usr_admin", "Wandou Admin", "admin@wandou.ai", Set.of(admin));
         createUserIfMissing("usr_editor", "Wandou Editor", "editor@wandou.ai", Set.of(editor));
+        createUserIfMissing("usr_viewer", "Wandou Viewer", "viewer@wandou.ai", Set.of(viewer));
     }
 
     private Permission permission(String code, String name) {

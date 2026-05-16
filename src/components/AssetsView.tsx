@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Search, Filter, FolderPlus, Upload, FileVideo, Image as ImageIcon, FileText, FileAudio, Folder, MoreVertical } from 'lucide-react';
-import { AssetResponse, createAsset, listAssets } from '../lib/api';
+import { AssetResponse, listAssets } from '../lib/api';
 
 export default function AssetsView() {
   const [assets, setAssets] = useState<AssetResponse[]>([]);
@@ -16,18 +16,8 @@ export default function AssetsView() {
     refreshAssets();
   }, []);
 
-  const handleRegisterDemoAsset = async () => {
-    setError(null);
-    try {
-      const asset = await createAsset({
-        type: 'image',
-        name: `Reference_${Date.now()}.png`,
-        url: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=1200&auto=format&fit=crop',
-      });
-      setAssets((current) => [asset, ...current]);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : '素材登记失败');
-    }
+  const handleUploadUnavailable = () => {
+    setError('素材上传接口尚未接入。当前列表只展示后端资产库中的真实素材。');
   };
 
   const getIcon = (type: string) => {
@@ -52,7 +42,7 @@ export default function AssetsView() {
             <FolderPlus size={16} />
             <span>新建文件夹</span>
           </button>
-          <button onClick={handleRegisterDemoAsset} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
+          <button onClick={handleUploadUnavailable} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
             <Upload size={16} />
             <span>登记素材</span>
           </button>
@@ -94,7 +84,7 @@ export default function AssetsView() {
             </tr>
           </thead>
           <tbody>
-            {assets.map((asset) => (
+            {assets.length > 0 ? assets.map((asset) => (
               <tr key={asset.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group cursor-pointer">
                 <td className="px-6 py-4 flex items-center space-x-3">
                   {getIcon(asset.type)}
@@ -111,7 +101,13 @@ export default function AssetsView() {
                   </button>
                 </td>
               </tr>
-            ))}
+            )) : (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
+                  后端资产库暂无素材。Agent Run 生成的素材会出现在这里。
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

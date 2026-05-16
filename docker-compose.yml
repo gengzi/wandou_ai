@@ -16,6 +16,24 @@ services:
       timeout: 3s
       retries: 12
 
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    container_name: wandou-ai-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-wandouminio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-wandouminio123}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - wandou-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
   backend:
     build:
       context: ./backend
@@ -28,10 +46,19 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-wandou}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-wandou_dev}
       WANDOU_AI_CORS_ALLOWED_ORIGINS: http://localhost:${WEB_PORT:-3001},http://127.0.0.1:${WEB_PORT:-3001}
+      WANDOU_AI_STORAGE_TYPE: minio
+      WANDOU_AI_MINIO_ENDPOINT: http://minio:9000
+      WANDOU_AI_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-wandouminio}
+      WANDOU_AI_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-wandouminio123}
+      WANDOU_AI_MINIO_BUCKET: ${MINIO_BUCKET:-wandou-assets}
+      WANDOU_AI_MINIO_PUBLIC_BASE_URL: ${WANDOU_AI_MINIO_PUBLIC_BASE_URL:-http://localhost:${MINIO_API_PORT:-9000}}
+      WANDOU_AI_VIDEO_PROVIDER: ${WANDOU_AI_VIDEO_PROVIDER:-mock}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       db:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health"]
@@ -63,3 +90,4 @@ services:
 
 volumes:
   wandou-postgres-data:
+  wandou-minio-data:

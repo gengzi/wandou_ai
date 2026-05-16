@@ -33,12 +33,12 @@ const highlights = [
   {
     title: 'Agent Run 编排',
     desc: '导演、剧本、分镜和视频任务会同步到会话、任务队列与画布节点。',
-    image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop',
+    icon: Bot,
   },
   {
     title: '画布式资产流',
     desc: '每一次生成都会沉淀为可追踪节点，素材、任务和会话保持同一个上下文。',
-    image: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=1200&auto=format&fit=crop',
+    icon: Video,
   },
 ];
 
@@ -60,7 +60,6 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
       title: project.name,
       time: new Date(project.createdAt).toLocaleString(),
       status: project.aspectRatio,
-      image: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=900&auto=format&fit=crop',
     }));
   }, [projects]);
 
@@ -212,9 +211,11 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
                 onClick={() => onNavigate(undefined, project.id)}
                 className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] text-left shadow-2xl"
               >
-                <div className="relative h-36 overflow-hidden bg-white/5">
-                  <img src={project.image} alt={project.title} className="h-full w-full object-cover opacity-65 transition-transform duration-500 hover:scale-105" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#111] via-transparent to-transparent" />
+                <div className="relative h-36 overflow-hidden border-b border-white/10 bg-[#121416]">
+                  <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(148,163,184,0.04))]" />
+                  <div className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-black/30 text-brand">
+                    <Clapperboard size={22} />
+                  </div>
                   <div className="absolute left-4 top-4 rounded-full bg-black/50 px-3 py-1 text-[11px] font-semibold text-brand backdrop-blur">
                     {project.status}
                   </div>
@@ -236,12 +237,11 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
           </div>
           <div className="grid grid-cols-2 gap-6">
             {highlights.map((item) => (
-              <button key={item.title} onClick={() => onNavigate()} className="group relative h-72 overflow-hidden rounded-3xl border border-white/10 bg-white/5 text-left">
-                <img src={item.image} alt={item.title} className="h-full w-full object-cover opacity-65 transition-transform duration-700 group-hover:scale-105" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
-                <div className="absolute bottom-0 p-7">
-                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-white">
-                    <Video size={20} />
+              <button key={item.title} onClick={() => onNavigate()} className="group relative min-h-64 overflow-hidden rounded-3xl border border-white/10 bg-[#111315] p-7 text-left transition-colors hover:border-brand/40">
+                <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(15,23,42,0.12))]" />
+                <div className="relative flex h-full flex-col justify-end">
+                  <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-white">
+                    <item.icon size={22} />
                   </div>
                   <h3 className="text-2xl font-black text-white">{item.title}</h3>
                   <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{item.desc}</p>

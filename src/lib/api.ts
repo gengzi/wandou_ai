@@ -144,6 +144,27 @@ export interface LoginResponse {
   user: UserResponse;
 }
 
+export interface ModelConfigResponse {
+  id: string;
+  capability: 'text' | 'image' | 'video' | 'audio';
+  provider: string;
+  displayName: string;
+  baseUrl: string;
+  modelName: string;
+  apiKeyPreview: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenerationResponse {
+  type: 'chat' | 'image' | 'video';
+  message: string;
+  asset?: AssetResponse;
+  node?: CanvasNodeResponse;
+  metadata: Record<string, unknown>;
+}
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
@@ -223,6 +244,46 @@ export async function inviteUser(payload: { name: string; email: string; role: s
   });
 }
 
+export async function listModelConfigs(): Promise<ModelConfigResponse[]> {
+  return requestJson<ModelConfigResponse[]>('/api/model-configs');
+}
+
+export async function createModelConfig(payload: {
+  capability: string;
+  provider: string;
+  displayName: string;
+  baseUrl: string;
+  modelName: string;
+  apiKey?: string;
+  enabled?: boolean;
+}): Promise<ModelConfigResponse> {
+  return requestJson<ModelConfigResponse>('/api/model-configs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateModelConfig(id: string, payload: {
+  capability: string;
+  provider: string;
+  displayName: string;
+  baseUrl: string;
+  modelName: string;
+  apiKey?: string;
+  enabled?: boolean;
+}): Promise<ModelConfigResponse> {
+  return requestJson<ModelConfigResponse>(`/api/model-configs/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteModelConfig(id: string): Promise<void> {
+  return requestJson<void>(`/api/model-configs/${id}`, { method: 'DELETE' });
+}
+
 export async function listProjects(): Promise<ProjectResponse[]> {
   return requestJson<ProjectResponse[]>('/api/projects');
 }
@@ -281,6 +342,45 @@ export async function createAsset(payload: {
   thumbnailUrl?: string;
 }): Promise<AssetResponse> {
   return requestJson<AssetResponse>('/api/assets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateChat(payload: {
+  projectId?: string;
+  canvasId?: string;
+  conversationId?: string;
+  prompt: string;
+}): Promise<GenerationResponse> {
+  return requestJson<GenerationResponse>('/api/generation/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateImage(payload: {
+  projectId?: string;
+  canvasId?: string;
+  conversationId?: string;
+  prompt: string;
+}): Promise<GenerationResponse> {
+  return requestJson<GenerationResponse>('/api/generation/image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateVideo(payload: {
+  projectId?: string;
+  canvasId?: string;
+  conversationId?: string;
+  prompt: string;
+}): Promise<GenerationResponse> {
+  return requestJson<GenerationResponse>('/api/generation/video', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
