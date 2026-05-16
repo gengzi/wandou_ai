@@ -6,6 +6,7 @@ import com.wandou.ai.agent.dto.AgentRunControlResponse;
 import com.wandou.ai.agent.dto.AgentRunDetailResponse;
 import com.wandou.ai.agent.dto.AgentRunRequest;
 import com.wandou.ai.agent.dto.AgentRunResponse;
+import com.wandou.ai.agent.monitor.AgentRunMonitor;
 import com.wandou.ai.agent.runtime.VideoAgentOutput;
 import com.wandou.ai.agent.runtime.VideoAgentRuntime;
 import com.wandou.ai.agent.runtime.VideoAgentStep;
@@ -33,20 +34,25 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class AgentRunService {
+    private static final Logger log = LoggerFactory.getLogger(AgentRunService.class);
 
     private final SseHub sseHub;
     private final ProjectService projectService;
@@ -57,8 +63,10 @@ public class AgentRunService {
     private final VideoAgentRuntime videoAgentRuntime;
     private final VideoGenerationProvider videoGenerationProvider;
     private final ImageGenerationService imageGenerationService;
+    private final AgentRunMonitor agentRunMonitor;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+    private final ExecutorService mediaExecutorService = Executors.newFixedThreadPool(2);
 
     public AgentRunService(
             SseHub sseHub,
@@ -69,7 +77,8 @@ public class AgentRunService {
             AssetService assetService,
             VideoAgentRuntime videoAgentRuntime,
             VideoGenerationProvider videoGenerationProvider,
-            ImageGenerationService imageGenerationService
+            ImageGenerationService imageGenerationService,
+            AgentRunMonitor agentRunMonitor
     ) {
         this.sseHub = sseHub;
         this.projectService = projectService;
@@ -80,6 +89,7 @@ public class AgentRunService {
         this.videoAgentRuntime = videoAgentRuntime;
         this.videoGenerationProvider = videoGenerationProvider;
         this.imageGenerationService = imageGenerationService;
+        this.agentRunMonitor = agentRunMonitor;
     }
 
     public AgentRunResponse start(AgentRunRequest request) {
@@ -102,6 +112,7 @@ public class AgentRunService {
                 Instant.now()
         );
         runs.put(runId, run);
+        agentRunMonitor.startRun(runId, run.createdAt, run.status);
         conversationService.addMessage(conversation.id(), project.id(), "user", "用户", request.message());
         executorService.submit(() -> execute(run, request));
         return new AgentRunResponse(runId, conversation.id(), canvasId, "running", "/api/agent/runs/" + runId + "/events");
@@ -120,6 +131,7 @@ public class AgentRunService {
             }
             run.confirmationComment = commentOf(request);
             run.checkpoint = null;
+            agentRunMonitor.confirmationResolved(runId);
             mark(run, "running", null);
             run.monitor.notifyAll();
         }
@@ -135,6 +147,7 @@ public class AgentRunService {
         synchronized (run.monitor) {
             run.interrupted = true;
             run.interruptComment = commentOf(request);
+            agentRunMonitor.interrupted(runId);
             for (AgentBase agent : run.activeAgents) {
                 agent.interrupt(userInterruptMessage(run.interruptComment));
             }
@@ -154,6 +167,7 @@ public class AgentRunService {
             run.interrupted = false;
             run.interruptComment = null;
             run.resumeComment = commentOf(request);
+            agentRunMonitor.resumed(runId);
             mark(run, run.checkpoint == null ? "running" : "waiting_confirmation", null);
             run.monitor.notifyAll();
         }
@@ -169,6 +183,7 @@ public class AgentRunService {
         synchronized (run.monitor) {
             run.cancelled = true;
             run.cancelComment = commentOf(request);
+            agentRunMonitor.cancelled(runId);
             for (AgentBase agent : run.activeAgents) {
                 agent.interrupt(userInterruptMessage(run.cancelComment));
             }
@@ -265,9 +280,12 @@ public class AgentRunService {
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "keyframe")
             );
             addEdge(run, storyboardNode.id(), imageNode.id());
+            CanvasNodeResponse plannedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "running", visualOutput.output());
+            publishNodeUpdated(run, plannedImageNode);
             Map<String, Object> imageOutput = new java.util.LinkedHashMap<>(visualOutput.output());
-            imageOutput.putAll(generateKeyframeAsset(run, request, imageNode, visualOutput));
-            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", imageOutput);
+            imageOutput.putAll(generateKeyframeAssetWithTimeout(run, request, imageNode, visualOutput));
+            String imageStatus = "skipped".equals(imageOutput.get("imageGenerationStatus")) ? "failed" : "success";
+            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), imageStatus, imageOutput);
             publishNodeUpdated(run, updatedImageNode);
 
             CanvasNodeResponse audioNode = addNode(run,
@@ -279,6 +297,8 @@ public class AgentRunService {
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "audio")
             );
             addEdge(run, storyboardNode.id(), audioNode.id());
+            CanvasNodeResponse plannedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "running", audioOutput.output());
+            publishNodeUpdated(run, plannedAudioNode);
             CanvasNodeResponse updatedAudioNode = canvasService.updateNode(run.canvasId, audioNode.id(), "success", audioOutput.output());
             publishNodeUpdated(run, updatedAudioNode);
 
@@ -294,7 +314,6 @@ public class AgentRunService {
             );
             addEdge(run, imageNode.id(), videoNode.id());
 
-            waitForConfirmation(run, "final-review", "最终确认后将提交视频生成任务并写入资产库。");
             VideoAgentRuntime.VideoAgentOutputs exportOutputs = videoAgentRuntime.reviewAndExport(run.userId, request.message(), listener);
             VideoAgentOutput exportOutput = exportOutputs.require(VideoAgentStep.EXPORT);
 
@@ -357,13 +376,20 @@ public class AgentRunService {
             ));
         } catch (RuntimeException ex) {
             String errorMessage = ex.getMessage() == null ? "agent run failed" : ex.getMessage();
-            mark(run, "failed", errorMessage);
+            log.warn("Agent run {} failed", runId, ex);
             conversationService.addMessage(run.conversationId, run.projectId, "assistant", run.agentName, "视频生成失败：" + errorMessage);
+            publish(runId, "message.completed", Map.of(
+                    "role", "assistant",
+                    "sender", run.agentName,
+                    "content", "视频生成失败：" + errorMessage
+            ));
             publish(runId, "run.failed", Map.of(
                     "runId", runId,
                     "status", "failed",
                     "error", errorMessage
             ));
+            mark(run, "failed", errorMessage);
+            publishMonitor(run);
         }
     }
 
@@ -375,17 +401,24 @@ public class AgentRunService {
             TaskResponse task,
             CanvasNodeResponse videoNode
     ) {
-        String providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
-                run.userId,
-                run.runId,
-                run.projectId,
-                run.canvasId,
-                videoNode.id(),
-                request.message(),
-                stringValue(visualOutput.output(), "prompt", request.message()),
-                stringValue(exportOutput.output(), "duration", "8s"),
-                stringValue(exportOutput.output(), "model", "mock")
-        ));
+        String providerJobId;
+        try {
+            providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
+                    run.userId,
+                    run.runId,
+                    run.projectId,
+                    run.canvasId,
+                    videoNode.id(),
+                    request.message(),
+                    stringValue(visualOutput.output(), "prompt", request.message()),
+                    stringValue(exportOutput.output(), "duration", "8s"),
+                    stringValue(exportOutput.output(), "model", "mock")
+            ));
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            failVideoTask(run, task, videoNode, message);
+            throw ex;
+        }
 
         publish(run.runId, "video.provider.submitted", Map.of(
                 "providerJobId", providerJobId,
@@ -394,7 +427,7 @@ public class AgentRunService {
 
         int lastProgress = -1;
         String lastMessage = "";
-        for (int attempt = 0; attempt < 80; attempt++) {
+        for (int attempt = 0; attempt < 180; attempt++) {
             ensureCanContinue(run);
             VideoGenerationStatus status = videoGenerationProvider.getStatus(providerJobId);
             String statusMessage = status.message() == null ? "视频生成任务进行中" : status.message();
@@ -418,7 +451,7 @@ public class AgentRunService {
             if ("failed".equals(status.status())) {
                 failVideoTask(run, task, videoNode, status.error() == null ? statusMessage : status.error());
             }
-            sleep(180);
+            sleep(2000);
         }
         failVideoTask(run, task, videoNode, "video provider timed out");
         throw new IllegalStateException("video provider timed out");
@@ -448,6 +481,34 @@ public class AgentRunService {
             output.put("imageGenerationStatus", "skipped");
             output.put("imageGenerationError", ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
         }
+        return output;
+    }
+
+    private Map<String, Object> generateKeyframeAssetWithTimeout(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            CanvasNodeResponse imageNode,
+            VideoAgentOutput visualOutput
+    ) {
+        try {
+            return mediaExecutorService.submit(() -> generateKeyframeAsset(run, request, imageNode, visualOutput))
+                    .get(75, TimeUnit.SECONDS);
+        } catch (TimeoutException ex) {
+            return skippedKeyframeOutput(visualOutput, "关键帧生图任务超过 75 秒未完成，已跳过以继续后续视频流程。");
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return skippedKeyframeOutput(visualOutput, "关键帧生图任务被中断，已跳过以继续后续视频流程。");
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            return skippedKeyframeOutput(visualOutput, cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage());
+        }
+    }
+
+    private Map<String, Object> skippedKeyframeOutput(VideoAgentOutput visualOutput, String message) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>();
+        output.putIfAbsent("thumbnailUrl", stringValue(visualOutput.output(), "thumbnailUrl", ""));
+        output.put("imageGenerationStatus", "skipped");
+        output.put("imageGenerationError", message);
         return output;
     }
 
@@ -482,6 +543,7 @@ public class AgentRunService {
             @Override
             public void onStepStarted(VideoAgentStep step, String agentName) {
                 ensureCanContinue(run);
+                agentRunMonitor.stepStarted(run.runId, step, agentName);
                 publish(run.runId, "agent.step.started", Map.of(
                         "step", step.code(),
                         "title", step.title(),
@@ -491,6 +553,7 @@ public class AgentRunService {
 
             @Override
             public void onStepCompleted(VideoAgentStep step, String agentName, VideoAgentOutput output, GenerateReason reason) {
+                agentRunMonitor.stepCompleted(run.runId, step, agentName, output, reason);
                 publish(run.runId, "agent.step.completed", Map.of(
                         "step", step.code(),
                         "title", step.title(),
@@ -509,6 +572,7 @@ public class AgentRunService {
                 throw new AgentRunCancelledException();
             }
             run.checkpoint = checkpoint;
+            agentRunMonitor.confirmationRequired(run.runId);
             mark(run, "waiting_confirmation", null);
             publish(run.runId, "agent.confirmation.required", Map.of(
                     "runId", run.runId,
@@ -547,6 +611,7 @@ public class AgentRunService {
 
     private void publishNodeUpdated(MutableAgentRun run, CanvasNodeResponse node) {
         publish(run.runId, "node.updated", Map.of(
+                "node", node,
                 "nodeId", node.id(),
                 "status", node.status(),
                 "output", node.output()
@@ -590,19 +655,11 @@ public class AgentRunService {
                 "step", "regenerate",
                 "regeneratingAt", Instant.now().toString()
         ));
-        publish(runId, "node.updated", Map.of(
-                "nodeId", runningNode.id(),
-                "status", runningNode.status(),
-                "output", runningNode.output()
-        ));
+        publishNodeUpdated(run, runningNode);
 
         sleep(800);
         CanvasNodeResponse completedNode = canvasService.updateNode(run.canvasId, nodeId, "success", regeneratedOutput(request.message(), nodeId));
-        publish(runId, "node.updated", Map.of(
-                "nodeId", completedNode.id(),
-                "status", completedNode.status(),
-                "output", completedNode.output()
-        ));
+        publishNodeUpdated(run, completedNode);
 
         sleep(100);
         mark(run, "success", null);
@@ -655,7 +712,7 @@ public class AgentRunService {
         );
     }
 
-    private String stringValue(Map<String, Object> output, String key, String fallback) {
+    private static String stringValue(Map<String, Object> output, String key, String fallback) {
         Object value = output.get(key);
         if (value instanceof String string && !string.isBlank()) {
             return string;
@@ -666,6 +723,7 @@ public class AgentRunService {
     @PreDestroy
     public void destroy() {
         executorService.shutdownNow();
+        mediaExecutorService.shutdownNow();
     }
 
     private ProjectResponse resolveProject(String projectId) {
@@ -681,7 +739,12 @@ public class AgentRunService {
     }
 
     private void publish(String runId, String eventName, Object data) {
+        MutableAgentRun run = runs.get(runId);
+        agentRunMonitor.event(runId, eventName);
         sseHub.send(runId, SseEvent.of(eventName, runId, data));
+        if (agentRunMonitor.shouldPublish(runId, eventName)) {
+            publishMonitor(run);
+        }
     }
 
     private CanvasNodeResponse addNode(
@@ -703,11 +766,7 @@ public class AgentRunService {
 
     private CanvasNodeResponse updateNode(MutableAgentRun run, String nodeId, String status, Map<String, Object> output) {
         CanvasNodeResponse node = canvasService.updateNode(run.canvasId, nodeId, status, output);
-        publish(run.runId, "node.updated", Map.of(
-                "nodeId", node.id(),
-                "status", node.status(),
-                "output", node.output()
-        ));
+        publishNodeUpdated(run, node);
         return node;
     }
 
@@ -723,6 +782,7 @@ public class AgentRunService {
     private void mark(MutableAgentRun run, String status, String error) {
         run.status = status;
         run.error = error;
+        agentRunMonitor.status(run.runId, status);
         run.updatedAt = Instant.now();
     }
 
@@ -745,7 +805,16 @@ public class AgentRunService {
         }
     }
 
-    private static final class MutableAgentRun {
+    private void publishMonitor(MutableAgentRun run) {
+        if (run == null) {
+            return;
+        }
+        sseHub.send(run.runId, SseEvent.of("run.monitor.updated", run.runId, Map.of(
+                "monitor", agentRunMonitor.snapshot(run.runId)
+        )));
+    }
+
+    private final class MutableAgentRun {
         private final String runId;
         private final String userId;
         private final String projectId;
@@ -805,6 +874,7 @@ public class AgentRunService {
                     error,
                     checkpoint,
                     "/api/agent/runs/" + runId + "/events",
+                    agentRunMonitor.snapshot(runId),
                     events,
                     createdAt,
                     updatedAt

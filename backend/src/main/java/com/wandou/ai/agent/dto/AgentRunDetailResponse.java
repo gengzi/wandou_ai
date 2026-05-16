@@ -16,6 +16,7 @@ public record AgentRunDetailResponse(
         String error,
         String checkpoint,
         String streamUrl,
+        AgentRunMonitorResponse monitor,
         List<SseEvent> events,
         Instant createdAt,
         Instant updatedAt

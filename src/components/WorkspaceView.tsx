@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
+import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -35,6 +35,8 @@ interface Message {
   role: 'user' | 'agent';
   content: string;
   timestamp: Date;
+  kind?: 'normal' | 'process';
+  status?: 'running' | 'success' | 'failed';
 }
 
 interface TaskItem {
@@ -80,6 +82,52 @@ function getString(...values: unknown[]) {
   return '';
 }
 
+function getDisplayText(...values: unknown[]) {
+  const text = getString(...values);
+  if (text) return text;
+  for (const value of values) {
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (value && typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return '';
+      }
+    }
+  }
+  return '';
+}
+
+function firstItems(value: unknown, limit = 3): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, limit)
+    .map((item) => getDisplayText(item))
+    .filter(Boolean);
+}
+
+function formatStepOutput(title: string, content: string, output: Record<string, unknown>) {
+  const source = sourceLabel(output);
+  const summary = getDisplayText(output.summary, output.prompt, output.consistency, output.camera, content);
+  const bullets = [
+    ...firstItems(output.beats),
+    ...firstItems(output.scenes).map((item) => `分镜：${item}`),
+    ...firstItems(output.characters).map((item) => `角色：${item}`),
+    ...firstItems(output.frames).map((item) => `关键帧：${item}`),
+    ...firstItems(output.checks).map((item) => `检查：${item}`),
+  ].slice(0, 4);
+  const lines = [`完成：${title}`];
+  if (source) lines.push(`模型：${source}`);
+  if (getString(output.fallbackReason)) lines.push(`说明：模型输出格式不稳定，已回退到结构化模板。`);
+  if (summary) lines.push(summary);
+  if (bullets.length > 0) {
+    lines.push(...bullets.map((item, index) => `${index + 1}. ${item}`));
+  }
+  return lines.join('\n');
+}
+
 function sourceLabel(output?: Record<string, unknown>) {
   const source = getString(output?.modelSource);
   if (source === 'configured-text-model') {
@@ -89,6 +137,12 @@ function sourceLabel(output?: Record<string, unknown>) {
     return '模板 fallback';
   }
   return '';
+}
+
+function formatDuration(ms?: number) {
+  const value = Number(ms || 0);
+  if (value < 1000) return `${value}ms`;
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}s`;
 }
 
 function toFlowNode(node: CanvasNodeResponse): Node {
@@ -124,9 +178,10 @@ function toFlowEdge(edge: CanvasEdgeResponse): Edge {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: 'smoothstep',
+    type: 'default',
     animated: false,
-    style: { stroke: '#64748b', strokeWidth: 1.2, opacity: 0.55 },
+    interactionWidth: 18,
+    style: { stroke: '#64748b', strokeWidth: 1.35, opacity: 0.62 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: '#64748b',
@@ -217,7 +272,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [setupError, setSetupError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskResponse | null>(null);
-  const [runDetail, setRunDetail] = useState<any | null>(null);
+  const [runDetail, setRunDetail] = useState<AgentRunDetailResponse | null>(null);
   const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -264,7 +319,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       ...params,
       type: 'default',
       animated: true,
-      style: { stroke: '#10B981', strokeWidth: 2, strokeDasharray: '4 4' }
+      interactionWidth: 18,
+      style: { stroke: '#10B981', strokeWidth: 2, opacity: 0.82 }
     } as any, eds));
 
     if (!project || !params.source || !params.target) return;
@@ -514,6 +570,22 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     if (event.event === 'message.delta') {
       setIsTyping(true);
+      setMessages((prev) => {
+        const messageId = `stream-${event.runId}`;
+        const content = getString(data.content, data.delta, '正在分析你的创作需求...');
+        const nextMessage: Message = {
+          id: messageId,
+          sender: getString(data.sender, '导演'),
+          role: 'agent',
+          content,
+          timestamp: new Date(event.createdAt),
+          kind: 'process',
+          status: 'running',
+        };
+        return prev.some((item) => item.id === messageId)
+          ? prev.map((item) => item.id === messageId ? { ...item, ...nextMessage, content: `${item.content}\n${content}`.trim() } : item)
+          : [...prev, nextMessage];
+      });
     }
 
     if (event.event === 'message.completed') {
@@ -553,11 +625,13 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     if (event.event === 'agent.step.started') {
       setRunStatus('running');
       setMessages((prev) => [...prev, {
-        id: `step-${event.runId}-${event.id}`,
+        id: `step-${event.runId}-${String(data.step || event.id)}`,
         sender: data.agentName || 'Agent',
         role: 'agent',
-        content: `开始：${data.title || data.step}`,
+        content: `开始：${data.title || data.step}\n正在读取上下文、调用模型并整理结构化输出...`,
         timestamp: new Date(event.createdAt),
+        kind: 'process',
+        status: 'running',
       }]);
     }
 
@@ -575,7 +649,28 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           [step]: nextStepOutput,
         };
         setStepOutputs(stepOutputsRef.current);
+        setMessages((prev) => {
+          const messageId = `step-${event.runId}-${step}`;
+          const nextMessage: Message = {
+            id: messageId,
+            sender: String(data.agentName || 'Agent'),
+            role: 'agent',
+            content: formatStepOutput(nextStepOutput.title, nextStepOutput.content, nextStepOutput.output),
+            timestamp: new Date(event.createdAt),
+            kind: 'process',
+            status: 'success',
+          };
+          return prev.some((item) => item.id === messageId)
+            ? prev.map((item) => item.id === messageId ? nextMessage : item)
+            : [...prev, nextMessage];
+        });
       }
+    }
+
+    if (event.event === 'run.monitor.updated' && data.monitor) {
+      setRunDetail((current) => current && current.runId === event.runId
+        ? { ...current, monitor: data.monitor as AgentRunDetailResponse['monitor'] }
+        : current);
     }
 
     if (event.event === 'agent.confirmation.required') {
@@ -709,6 +804,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         'message.completed',
         'agent.step.started',
         'agent.step.completed',
+        'run.monitor.updated',
         'agent.confirmation.required',
         'agent.confirmation.accepted',
         'run.interrupted',
@@ -1058,7 +1154,11 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     <>
                       {/* Only showing this complex structure for the first pre-filled message mapping to UI */}
                       {idx === 0 && (
-                        <div className="text-[13px] text-slate-300 leading-relaxed">
+                        <div className={`whitespace-pre-wrap text-[13px] leading-relaxed ${
+                          msg.kind === 'process'
+                            ? 'rounded-xl border border-brand/20 bg-brand/10 p-3 text-slate-300'
+                            : 'text-slate-300'
+                        }`}>
                           {msg.content}
                         </div>
                       )}
@@ -1073,7 +1173,17 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                       )}
 
                       {idx !== 0 && (
-                        <div className="text-[13px] text-slate-300 leading-relaxed bg-transparent pt-2">
+                        <div className={`whitespace-pre-wrap text-[13px] leading-relaxed ${
+                          msg.kind === 'process'
+                            ? `rounded-xl border p-3 ${
+                                msg.status === 'running'
+                                  ? 'border-yellow-300/20 bg-yellow-300/10 text-yellow-100'
+                                  : msg.status === 'failed'
+                                    ? 'border-red-400/25 bg-red-500/10 text-red-100'
+                                    : 'border-brand/20 bg-brand/10 text-slate-200'
+                              }`
+                            : 'bg-transparent pt-2 text-slate-300'
+                        }`}>
                            {msg.content}
                         </div>
                       )}
@@ -1422,6 +1532,57 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <div className="mt-1 font-semibold text-slate-100">{runDetail.status}</div>
                 {runDetail.error && <div className="mt-2 text-xs text-red-200">{runDetail.error}</div>}
               </div>
+              {runDetail.monitor && (
+                <div className="space-y-3 rounded-xl border border-brand/20 bg-brand/5 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs text-slate-500">监控链路</div>
+                      <div className="mt-1 text-[13px] font-semibold text-slate-100">
+                        {runDetail.monitor.currentStep ? `运行中：${runDetail.monitor.currentStep}` : `瓶颈：${runDetail.monitor.bottleneckStep || '待采样'}`}
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] text-slate-400">
+                      <div>{formatDuration(runDetail.monitor.runDurationMs)}</div>
+                      <div>{runDetail.monitor.eventCount} events</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-[11px]">
+                    <div className="rounded-lg bg-black/20 p-2">
+                      <div className="text-slate-500">确认点</div>
+                      <div className="mt-1 text-slate-200">{runDetail.monitor.confirmationWaitCount}</div>
+                    </div>
+                    <div className="rounded-lg bg-black/20 p-2">
+                      <div className="text-slate-500">确认等待</div>
+                      <div className="mt-1 text-slate-200">{formatDuration(runDetail.monitor.totalConfirmationWaitMs)}</div>
+                    </div>
+                    <div className="rounded-lg bg-black/20 p-2">
+                      <div className="text-slate-500">打断</div>
+                      <div className="mt-1 text-slate-200">{runDetail.monitor.interruptionCount}</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(runDetail.monitor.steps || []).map((step) => (
+                      <div key={step.step} className="rounded-lg border border-white/10 bg-black/20 p-2">
+                        <div className="flex items-center justify-between gap-3 text-[11px]">
+                          <span className="font-semibold text-slate-200">{step.title || step.step}</span>
+                          <span className="text-slate-500">{formatDuration(step.durationMs)}</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-slate-500">
+                          <span>{step.status}</span>
+                          <span className="truncate">{step.modelSource || step.reason || step.agentName}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-1.5">
+                    {(runDetail.monitor.designSignals || []).map((signal, index) => (
+                      <div key={`${runDetail.runId}-signal-${index}`} className="rounded-md bg-black/20 px-2 py-1.5 text-[11px] leading-5 text-brand">
+                        {signal}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <div className="text-xs text-slate-500">指令</div>
                 <div className="mt-1 text-slate-300">{runDetail.message}</div>

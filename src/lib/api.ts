@@ -32,9 +32,37 @@ export interface AgentRunDetailResponse {
   error?: string;
   checkpoint?: string;
   streamUrl: string;
+  monitor?: AgentRunMonitorResponse;
   events: SseEvent[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentRunMonitorResponse {
+  runId: string;
+  status: string;
+  currentStep: string;
+  bottleneckStep: string;
+  runDurationMs: number;
+  eventCount: number;
+  interruptionCount: number;
+  confirmationWaitCount: number;
+  totalConfirmationWaitMs: number;
+  steps: AgentStepMonitorResponse[];
+  designSignals: string[];
+  updatedAt: string;
+}
+
+export interface AgentStepMonitorResponse {
+  step: string;
+  title: string;
+  agentName: string;
+  status: string;
+  reason: string;
+  modelSource: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs: number;
 }
 
 export interface ProjectResponse {

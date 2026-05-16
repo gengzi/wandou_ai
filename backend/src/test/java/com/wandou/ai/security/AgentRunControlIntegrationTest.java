@@ -61,13 +61,13 @@ class AgentRunControlIntegrationTest {
         assertThat(secondCheckpoint.path("checkpoint").asText()).isEqualTo("storyboard");
 
         confirm(token, runId, "角色和分镜通过。");
-        JsonNode finalCheckpoint = awaitStatus(token, runId, "waiting_confirmation");
-        assertThat(finalCheckpoint.path("checkpoint").asText()).isEqualTo("final-review");
-
-        confirm(token, runId, "生成成片。");
         JsonNode completed = awaitStatus(token, runId, "success");
         assertEvent(completed, "asset.created");
         assertEvent(completed, "run.completed");
+        assertEvent(completed, "run.monitor.updated");
+        assertThat(completed.path("monitor").path("eventCount").asInt()).isGreaterThan(0);
+        assertThat(completed.path("monitor").path("steps").findValuesAsText("step")).contains("script", "export");
+        assertThat(completed.path("monitor").path("designSignals").size()).isGreaterThan(0);
 
         mockMvc.perform(get("/api/tasks")
                         .header("Authorization", "Bearer " + token)
@@ -142,8 +142,6 @@ class AgentRunControlIntegrationTest {
         confirm(token, runId, "剧本可以，继续。");
         awaitStatus(token, runId, "waiting_confirmation");
         confirm(token, runId, "角色和分镜通过。");
-        awaitStatus(token, runId, "waiting_confirmation");
-        confirm(token, runId, "提交失败测试。");
 
         JsonNode failed = awaitStatus(token, runId, "failed");
         assertEvent(failed, "task.failed");
@@ -168,8 +166,6 @@ class AgentRunControlIntegrationTest {
         confirm(token, runId, "剧本可以，继续。");
         awaitStatus(token, runId, "waiting_confirmation");
         confirm(token, runId, "角色和分镜通过。");
-        awaitStatus(token, runId, "waiting_confirmation");
-        confirm(token, runId, "生成成片。");
 
         JsonNode completed = awaitStatus(token, runId, "success");
         assertEvent(completed, "run.completed");
@@ -191,8 +187,6 @@ class AgentRunControlIntegrationTest {
         confirm(adminToken, runId, "剧本可以，继续。");
         awaitStatus(adminToken, runId, "waiting_confirmation");
         confirm(adminToken, runId, "角色和分镜通过。");
-        awaitStatus(adminToken, runId, "waiting_confirmation");
-        confirm(adminToken, runId, "生成成片。");
         awaitStatus(adminToken, runId, "success");
 
         String assetsResponse = mockMvc.perform(get("/api/assets")

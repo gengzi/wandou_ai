@@ -34,6 +34,11 @@ wandou:
   ai:
     provider:
       type: mock
+    agent:
+      monitor:
+        enabled: ${WANDOU_AI_AGENT_MONITOR_ENABLED:true}
+        sse-enabled: ${WANDOU_AI_AGENT_MONITOR_SSE_ENABLED:true}
+        min-publish-interval-ms: ${WANDOU_AI_AGENT_MONITOR_MIN_PUBLISH_INTERVAL_MS:1000}
     video:
       provider: ${WANDOU_AI_VIDEO_PROVIDER:mock}
     storage:
