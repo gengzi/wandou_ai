@@ -36,6 +36,14 @@ public class TextModelService {
         if (apiKey == null || apiKey.isBlank()) {
             return Optional.empty();
         }
+        if (normalizeBaseUrl(config.baseUrl()).startsWith("mock://")) {
+            return Optional.of(new TextModelCompletion(
+                    mockContent(agentName),
+                    config.provider(),
+                    config.modelName(),
+                    config.displayName()
+            ));
+        }
 
         Map<String, Object> request = Map.of(
                 "model", config.modelName(),
@@ -85,5 +93,36 @@ public class TextModelService {
             return "https://api.openai.com";
         }
         return baseUrl.replaceAll("/+$", "");
+    }
+
+    private String mockContent(String agentName) {
+        if (agentName == null) {
+            return "{\"summary\":\"测试输出\"}";
+        }
+        if (agentName.contains("导演")) {
+            return "{\"goal\":\"测试视频\",\"subject\":\"测试主体\",\"plan\":[\"剧本\",\"分镜\",\"视频\"],\"confirmationPoints\":[\"script\",\"storyboard\",\"final-review\"]}";
+        }
+        if (agentName.contains("剧本")) {
+            return "{\"summary\":\"测试短视频剧本\",\"style\":\"测试风格\",\"beats\":[\"开场\",\"推进\",\"高潮\",\"收束\"],\"targetAudience\":\"测试观众\",\"durationSeconds\":8}";
+        }
+        if (agentName.contains("角色")) {
+            return "{\"characters\":[{\"name\":\"主角\",\"prompt\":\"测试主角提示词\"}],\"consistency\":\"保持主角一致\"}";
+        }
+        if (agentName.contains("分镜")) {
+            return "{\"scenes\":[{\"shot\":\"01\",\"duration\":\"2s\",\"content\":\"测试镜头\"}],\"camera\":\"稳定推镜\"}";
+        }
+        if (agentName.contains("关键帧")) {
+            return "{\"prompt\":\"cinematic test keyframe\",\"frames\":[\"测试关键帧\"]}";
+        }
+        if (agentName.contains("声音")) {
+            return "{\"prompt\":\"测试配乐和音效\",\"duration\":\"8s\",\"mood\":\"平稳\"}";
+        }
+        if (agentName.contains("质量")) {
+            return "{\"checks\":[\"测试检查\"],\"summary\":\"测试审查通过\"}";
+        }
+        if (agentName.contains("成片")) {
+            return "{\"summary\":\"测试成片\",\"duration\":\"8s\",\"model\":\"mock-video\",\"assetName\":\"测试视频\"}";
+        }
+        return "{\"summary\":\"测试输出\"}";
     }
 }

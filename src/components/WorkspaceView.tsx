@@ -193,6 +193,10 @@ function looksLikeAgentWorkflowCommand(message: string): boolean {
   return ['完整流程', 'agent run', '分镜', '剧本', '三段确认', '工作流'].some((keyword) => normalized.includes(keyword));
 }
 
+function looksLikeQuickVideoCommand(message: string): boolean {
+  return ['快速视频', '快速生成视频', '只生成视频', 'mock视频', 'mock video'].some((keyword) => message.toLowerCase().includes(keyword));
+}
+
 export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -569,7 +573,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     setIsTyping(true);
 
     try {
-      const useAgentWorkflow = Boolean(options?.mode) || looksLikeAgentWorkflowCommand(cleanMessage);
+      const useAgentWorkflow = Boolean(options?.mode) || looksLikeAgentWorkflowCommand(cleanMessage) || (looksLikeVideoCommand(cleanMessage) && !looksLikeQuickVideoCommand(cleanMessage));
       if (!useAgentWorkflow) {
         setRunStatus('running');
         const payload = {

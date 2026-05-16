@@ -21,6 +21,7 @@ import com.wandou.ai.canvas.dto.PositionResponse;
 import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.conversation.ConversationService;
 import com.wandou.ai.conversation.dto.ConversationResponse;
+import com.wandou.ai.generation.ImageGenerationService;
 import com.wandou.ai.project.ProjectService;
 import com.wandou.ai.project.dto.ProjectResponse;
 import com.wandou.ai.sse.SseEvent;
@@ -55,6 +56,7 @@ public class AgentRunService {
     private final AssetService assetService;
     private final VideoAgentRuntime videoAgentRuntime;
     private final VideoGenerationProvider videoGenerationProvider;
+    private final ImageGenerationService imageGenerationService;
     private final Map<String, MutableAgentRun> runs = new ConcurrentHashMap<>();
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
 
@@ -66,7 +68,8 @@ public class AgentRunService {
             TaskService taskService,
             AssetService assetService,
             VideoAgentRuntime videoAgentRuntime,
-            VideoGenerationProvider videoGenerationProvider
+            VideoGenerationProvider videoGenerationProvider,
+            ImageGenerationService imageGenerationService
     ) {
         this.sseHub = sseHub;
         this.projectService = projectService;
@@ -76,6 +79,7 @@ public class AgentRunService {
         this.assetService = assetService;
         this.videoAgentRuntime = videoAgentRuntime;
         this.videoGenerationProvider = videoGenerationProvider;
+        this.imageGenerationService = imageGenerationService;
     }
 
     public AgentRunResponse start(AgentRunRequest request) {
@@ -261,7 +265,20 @@ public class AgentRunService {
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "keyframe")
             );
             addEdge(run, storyboardNode.id(), imageNode.id());
-            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", visualOutput.output());
+            ImageGenerationService.ImageResult keyframe = imageGenerationService.generate(
+                    run.userId,
+                    stringValue(visualOutput.output(), "prompt", request.message())
+            );
+            AssetResponse keyframeAsset = keyframe.url().isBlank()
+                    ? assetService.createStoredAsset(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.bytes(), keyframe.contentType(), keyframe.extension())
+                    : assetService.create(run.projectId, run.canvasId, imageNode.id(), "image", "关键帧图", keyframe.url(), keyframe.url());
+            publish(runId, "asset.created", Map.of("asset", keyframeAsset));
+            Map<String, Object> imageOutput = new java.util.LinkedHashMap<>(visualOutput.output());
+            imageOutput.put("assetId", keyframeAsset.id());
+            imageOutput.put("url", keyframeAsset.url());
+            imageOutput.put("thumbnailUrl", keyframeAsset.thumbnailUrl());
+            imageOutput.putAll(keyframe.metadata());
+            CanvasNodeResponse updatedImageNode = canvasService.updateNode(run.canvasId, imageNode.id(), "success", imageOutput);
             publishNodeUpdated(run, updatedImageNode);
 
             CanvasNodeResponse audioNode = addNode(run,
