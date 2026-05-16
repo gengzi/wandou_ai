@@ -2,10 +2,14 @@ package com.wandou.ai.asset;
 
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.asset.dto.AssetCreateRequest;
+import com.wandou.ai.asset.dto.AssetPageResponse;
 import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.storage.StoredObject;
 import com.wandou.ai.storage.StoredObjectMetadata;
 import com.wandou.ai.storage.VideoStorageService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -169,11 +173,30 @@ public class AssetService {
     @Transactional(readOnly = true)
     public List<AssetResponse> list(String projectId) {
         List<AssetEntity> assets = projectId == null || projectId.isBlank()
-                ? assetRepository.findAll(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
+                ? assetRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"))
                 : assetRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         return assets.stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AssetPageResponse page(String projectId, String type, String keyword, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        Page<AssetEntity> result = assetRepository.search(
+                normalize(projectId),
+                normalize(type),
+                normalize(keyword),
+                PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+        return new AssetPageResponse(
+                result.getContent().stream().map(this::toResponse).toList(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.getNumber(),
+                result.getSize()
+        );
     }
 
     @Transactional(readOnly = true)

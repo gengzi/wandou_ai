@@ -2,6 +2,7 @@ package com.wandou.ai.usage;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.wandou.ai.common.ApiResponse;
+import com.wandou.ai.usage.dto.ModelUsageRecordPageResponse;
 import com.wandou.ai.usage.dto.ModelUsageRecordResponse;
 import com.wandou.ai.usage.dto.UsageSummaryResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,5 +29,13 @@ public class UsageController {
     @GetMapping("/me/records")
     public ApiResponse<List<ModelUsageRecordResponse>> records(@RequestParam(defaultValue = "50") int limit) {
         return ApiResponse.ok(modelUsageService.records(StpUtil.getLoginIdAsString(), limit));
+    }
+
+    @GetMapping("/me/records/page")
+    public ApiResponse<ModelUsageRecordPageResponse> recordPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.ok(modelUsageService.recordPage(StpUtil.getLoginIdAsString(), page, size));
     }
 }

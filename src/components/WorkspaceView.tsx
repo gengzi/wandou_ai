@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
+import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -375,6 +375,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [stepOutputs, setStepOutputs] = useState<Record<string, StepOutputState>>({});
   const [setupError, setSetupError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [usageSummary, setUsageSummary] = useState<UsageSummaryResponse | null>(null);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskResponse | null>(null);
   const [runDetail, setRunDetail] = useState<AgentRunDetailResponse | null>(null);
   const [scriptEdit, setScriptEdit] = useState<ScriptEditState | null>(null);
@@ -1250,6 +1251,61 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
   };
 
+  const handleOpenUsage = async () => {
+    try {
+      const summary = await getMyUsage();
+      setUsageSummary(summary);
+      const recentCost = summary.recentRecords.slice(0, 3)
+        .map((record) => `${capabilityLabel(record.capability)} ${record.credits} 点`)
+        .join('，');
+      setNotice(`剩余 ${summary.remainingCredits} 点，已用 ${summary.usedCredits} 点，请求 ${summary.requestCount} 次${recentCost ? `。最近：${recentCost}` : '。'}`);
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `用量加载失败：${error.message}` : '用量加载失败。');
+    }
+  };
+
+  const handleOpenVideoTasks = () => {
+    setActiveCanvasSection('视频');
+    const videoTask = tasks.find((task) => task.nodeId.toLowerCase().includes('video')) || tasks[0];
+    if (videoTask) {
+      void handleOpenTask(videoTask.id);
+      setNotice('已打开视频/任务上下文。');
+      return;
+    }
+    const videoNode = nodes.find((node) => node.type === 'video' || node.type === 'final');
+    if (videoNode) {
+      setSelectedNodeId(videoNode.id);
+      setNotice('已定位到视频节点。');
+      return;
+    }
+    setNotice('当前还没有视频任务。输入视频指令或点击播放启动完整流程。');
+  };
+
+  const handleShareProject = async () => {
+    if (!project) {
+      setSetupError('项目尚未初始化，无法生成分享链接。');
+      return;
+    }
+    const shareUrl = `${window.location.origin}${window.location.pathname}?projectId=${encodeURIComponent(project.id)}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setNotice('项目链接已复制。登录用户打开后会进入同一个项目工作区。');
+    } catch {
+      setInputValue((current) => current || shareUrl);
+      setNotice('浏览器未允许写入剪贴板，已把项目链接放到输入框。');
+    }
+  };
+
+  const handlePlayWorkflow = async () => {
+    if (activeRunId && runStatus !== 'success' && runStatus !== 'failed' && runStatus !== 'cancelled') {
+      setNotice('智能体流程正在运行，可在左侧查看过程或使用打断/取消。');
+      return;
+    }
+    const prompt = inputValue.trim() || `生成一个 16:9 的完整短视频，包含剧本、多个角色设定、分镜、关键帧、配音/音效设计和最终视频。`;
+    await runAgent(prompt, { mode: 'full-workflow' });
+  };
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
     await runAgent(inputValue);
@@ -1345,25 +1401,25 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           </div>
           <div className="flex shrink-0 items-center space-x-2">
              {/* Credits */}
-             <div className="hidden 2xl:flex items-center space-x-1.5 whitespace-nowrap px-3 py-1.5 bg-brand/10 border border-brand/20 rounded-full cursor-pointer hover:bg-brand/20 transition-colors tooltip" aria-label="算力点数">
+             <button onClick={handleOpenUsage} className="hidden 2xl:flex items-center space-x-1.5 whitespace-nowrap px-3 py-1.5 bg-brand/10 border border-brand/20 rounded-full cursor-pointer hover:bg-brand/20 transition-colors tooltip" aria-label="算力点数" title="查看算力用量">
                 <div className="w-3.5 h-3.5 rounded-full bg-brand flex items-center justify-center">
                   <Wand2 size={8} className="text-white" />
                 </div>
-                <span className="text-brand text-[12px] font-bold">1,200</span>
+                <span className="text-brand text-[12px] font-bold">{usageSummary?.remainingCredits ?? 1200}</span>
                 <Plus size={12} className="text-brand/80" />
-             </div>
+             </button>
              
              {/* Tasks */}
-             <button onClick={() => setNotice(tasks.length > 0 ? '点击后台任务队列中的条目可查看详情。' : '当前暂无后台任务。')} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="任务">
+             <button onClick={handleOpenVideoTasks} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="视频任务">
                <Video size={18} />
-               <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full border border-[#121213]"></span>
+               {tasks.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full border border-[#121213]"></span>}
              </button>
 
              {/* Share */}
-             <button onClick={() => setNotice('分享链接需要项目权限和公开访问策略，当前版本暂未开放。')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="分享" aria-label="分享">
+             <button onClick={handleShareProject} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="复制项目链接" aria-label="复制项目链接">
                 <Share2 size={14} className="opacity-80" />
              </button>
-             <button onClick={() => setNotice('项目导出会在成片和资产清单格式确定后接入，当前可在素材库查看生成资产。')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors" title="导出项目" aria-label="导出项目">
+             <button onClick={handlePlayWorkflow} disabled={isTyping} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50" title="启动完整流程" aria-label="启动完整流程">
                 <Play size={14} className="fill-white" />
              </button>
           </div>
@@ -1659,6 +1715,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <CopyPlus size={16} />
               </button>
               <input 
+                ref={promptInputRef}
                 type="text" 
                 placeholder="描述或输入指令（支持上传参考图、视频）..." 
                 disabled={!project}
@@ -1859,11 +1916,11 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           {/* Floater Controls (Inside Canvas) */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 hidden lg:flex items-center space-x-2 z-20">
                <div className="bg-[#1A1A1C] h-10 flex items-center px-1 rounded-xl shadow-xl border border-white/5">
-                 <button onClick={() => setNotice('对话模式已在左侧输入框中可用。')} className="p-2 text-slate-400 hover:text-white transition-colors"><MessageSquare size={16} /></button>
-                 <button onClick={() => setNotice('选择模式已启用：点击画布节点即可查看配置。')} className="p-2 text-slate-400 hover:text-white transition-colors"><MousePointer2 size={16} /></button>
-                 <button onClick={() => setNotice('魔法工具会在批量节点操作接入后开放。')} className="p-2 text-slate-400 hover:text-white transition-colors"><Wand2 size={16} /></button>
+                 <button onClick={handleFocusPrompt} className="p-2 text-slate-400 hover:text-white transition-colors" title="输入对话指令"><MessageSquare size={16} /></button>
+                 <button onClick={handleSelectNodeTool} className="p-2 text-slate-400 hover:text-white transition-colors" title="打开节点配置"><MousePointer2 size={16} /></button>
+                 <button onClick={handleMagicCanvasTool} className="p-2 text-slate-400 hover:text-white transition-colors" title="整理画布并生成指令草稿"><Wand2 size={16} /></button>
                  <div className="w-px h-4 bg-white/10 mx-1" />
-                 <button onClick={() => setNotice('手动新增节点需要画布节点创建接口，当前由智能体流程自动创建。')} className="p-2 text-slate-400 hover:text-white transition-colors"><Plus size={16} /></button>
+                 <button onClick={handleAddCanvasNode} className="p-2 text-slate-400 hover:text-white transition-colors" title="新增剧本节点"><Plus size={16} /></button>
                </div>
             </div>
 
@@ -1874,6 +1931,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                   <ImagePlus size={16} />
                 </button>
                 <input
+                  ref={mobilePromptInputRef}
                   type="text"
                   placeholder="输入创作指令..."
                   disabled={!project}

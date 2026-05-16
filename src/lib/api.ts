@@ -117,6 +117,14 @@ export interface AssetResponse {
   createdAt: string;
 }
 
+export interface AssetPageResponse {
+  content: AssetResponse[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
+}
+
 export interface MessageResponse {
   id: string;
   conversationId: string;
@@ -197,6 +205,14 @@ export interface UsageSummaryResponse {
   remainingCredits: number;
   requestCount: number;
   recentRecords: ModelUsageRecordResponse[];
+}
+
+export interface ModelUsageRecordPageResponse {
+  content: ModelUsageRecordResponse[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
 }
 
 export interface LoginResponse {
@@ -305,6 +321,10 @@ export async function getMyUsage(): Promise<UsageSummaryResponse> {
 
 export async function listMyUsageRecords(limit = 50): Promise<ModelUsageRecordResponse[]> {
   return requestJson<ModelUsageRecordResponse[]>(`/api/usage/me/records?limit=${limit}`);
+}
+
+export async function listMyUsageRecordPage(page = 0, size = 10): Promise<ModelUsageRecordPageResponse> {
+  return requestJson<ModelUsageRecordPageResponse>(`/api/usage/me/records/page?page=${page}&size=${size}`);
 }
 
 export async function inviteUser(payload: { name: string; email: string; role: string }): Promise<UserResponse> {
@@ -437,6 +457,22 @@ export async function listAssets(projectId?: string): Promise<AssetResponse[]> {
     url.searchParams.set('projectId', projectId);
   }
   return requestJson<AssetResponse[]>(url.toString());
+}
+
+export async function listAssetsPage(payload: {
+  projectId?: string;
+  type?: string;
+  keyword?: string;
+  page?: number;
+  size?: number;
+}): Promise<AssetPageResponse> {
+  const url = new URL(apiUrl('/api/assets/page'));
+  if (payload.projectId) url.searchParams.set('projectId', payload.projectId);
+  if (payload.type) url.searchParams.set('type', payload.type);
+  if (payload.keyword) url.searchParams.set('keyword', payload.keyword);
+  url.searchParams.set('page', String(payload.page ?? 0));
+  url.searchParams.set('size', String(payload.size ?? 10));
+  return requestJson<AssetPageResponse>(url.toString());
 }
 
 export async function getAsset(assetId: string): Promise<AssetResponse> {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUp,
   BadgeHelp,
@@ -15,7 +15,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { listProjects, ProjectResponse, UserResponse } from '../lib/api';
+import { createProject, listProjects, ProjectResponse, uploadAsset, UserResponse } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 
 interface HomeViewProps {
@@ -30,6 +30,11 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [notice, setNotice] = useState('');
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [referenceProjectId, setReferenceProjectId] = useState<string | undefined>();
+  const [referencePreviewUrl, setReferencePreviewUrl] = useState('');
+  const [referenceAssetName, setReferenceAssetName] = useState('');
+  const [uploadingReference, setUploadingReference] = useState(false);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listProjects()
@@ -37,6 +42,14 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
       .catch(() => setProjects([]))
       .finally(() => setLoadingProjects(false));
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (referencePreviewUrl) {
+        URL.revokeObjectURL(referencePreviewUrl);
+      }
+    };
+  }, [referencePreviewUrl]);
 
   const recentProjects = useMemo(() => {
     return projects.slice(0, showAllProjects ? projects.length : 4).map((project) => ({
@@ -48,7 +61,59 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
   }, [projects, showAllProjects]);
 
   const submit = () => {
-    onNavigate(prompt);
+    onNavigate(prompt, referenceProjectId);
+  };
+
+  const openReferencePicker = () => {
+    if (uploadingReference) return;
+    referenceInputRef.current?.click();
+  };
+
+  const handleReferenceUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setNotice('请上传图片格式的参考图。');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setReferencePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return previewUrl;
+    });
+    setReferenceAssetName(file.name);
+    setUploadingReference(true);
+    setNotice('正在上传参考图...');
+    try {
+      const project = referenceProjectId
+        ? projects.find((item) => item.id === referenceProjectId)
+        : await createProject({
+            name: prompt.trim() ? `参考图项目-${prompt.trim().slice(0, 12)}` : '参考图项目',
+            description: '由首页参考图上传自动创建',
+            aspectRatio: '16:9',
+          });
+      if (!project) {
+        throw new Error('项目不存在，请重新选择参考图。');
+      }
+      if (!referenceProjectId) {
+        setReferenceProjectId(project.id);
+        setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+      }
+      await uploadAsset({
+        projectId: project.id,
+        canvasId: project.canvasId,
+        type: 'image',
+        name: file.name,
+        file,
+      });
+      setNotice('参考图已上传到项目素材库，开始创作时会带入这个项目上下文。');
+    } catch (error) {
+      console.error(error);
+      setNotice(error instanceof Error ? `参考图上传失败：${error.message}` : '参考图上传失败，请稍后重试。');
+    } finally {
+      setUploadingReference(false);
+    }
   };
 
   const quickActions = [
@@ -133,66 +198,80 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
               <span className="text-xs font-semibold text-slate-300">{t('home.agentReady')}</span>
             </div>
 
-            <div className="rounded-[30px] border border-white/15 bg-[radial-gradient(circle_at_38%_20%,rgba(16,185,129,0.16),transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(13,15,14,0.96)_40%,rgba(13,15,14,0.98))] p-5 shadow-[0_0_0_1px_rgba(16,185,129,0.08),0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur">
-              <div className="flex gap-5">
+            <div className="flex min-h-[92px] items-center gap-4 rounded-[34px] border border-brand/35 bg-[radial-gradient(circle_at_34%_0%,rgba(16,185,129,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,20,19,0.95))] px-5 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.42)] backdrop-blur">
+              <input ref={referenceInputRef} type="file" accept="image/*" className="hidden" onChange={handleReferenceUpload} />
+              <button
+                onClick={openReferencePicker}
+                disabled={uploadingReference}
+                className="group relative flex h-[68px] w-[138px] shrink-0 items-center justify-center rounded-[24px] border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:border-brand/40 hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-70"
+                aria-label={t('home.addAttachment')}
+              >
+                <span className="relative h-[54px] w-[54px] rotate-[-5deg] overflow-hidden rounded-2xl border border-dashed border-white/28 bg-[#F7FAF9]/[0.04] transition-transform group-hover:rotate-[-2deg]">
+                  {referencePreviewUrl ? (
+                    <img src={referencePreviewUrl} alt={referenceAssetName} className="h-full w-full object-cover opacity-90" />
+                  ) : (
+                    <span className="flex h-full flex-col items-center justify-center text-slate-400 group-hover:text-white">
+                      <Plus size={17} />
+                      <span className="mt-1 text-[10px] font-black leading-none">图片</span>
+                    </span>
+                  )}
+                </span>
+                <span className="ml-2 text-sm font-black text-slate-300 group-hover:text-white">{uploadingReference ? '上传中' : '附件'}</span>
+              </button>
+
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                className="h-14 min-w-0 flex-1 resize-none bg-transparent py-2 text-xl leading-10 text-slate-100 outline-none placeholder:text-slate-500"
+                placeholder="描述或输入指令（支持参考图、视频任务、分镜生成）..."
+              />
+
+              <button
+                onClick={() => setNotice(t('home.highlight.agent.desc'))}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label={t('home.agentMode')}
+              >
+                <Sparkles size={25} />
+              </button>
+
+              <button
+                onClick={submit}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_25px_rgba(16,185,129,0.38)] transition-transform hover:scale-105 active:scale-95"
+                aria-label={t('home.start')}
+              >
+                <ArrowUp size={24} />
+              </button>
+            </div>
+
+            <div className="mt-5 flex justify-center">
+              <div className="flex min-w-0 items-center rounded-2xl border border-white/10 bg-[#08090A]/45 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                <button
+                  onClick={() => setNotice(t('home.highlight.agent.desc'))}
+                  className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_10px_30px_rgba(0,0,0,0.24)]"
+                >
+                  <Bot size={16} />
+                  {t('home.agentMode')}
+                </button>
+                <button
+                  onClick={openReferencePicker}
+                  disabled={uploadingReference}
+                  className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <ImagePlus size={16} />
+                  {uploadingReference ? '上传中' : t('home.referenceImage')}
+                </button>
                 <button
                   onClick={() => setNotice(t('home.attachmentNotice'))}
-                  className="group relative h-32 w-24 shrink-0 rounded-[22px] border border-white/10 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:border-brand/35 hover:bg-brand/10"
-                  aria-label={t('home.addAttachment')}
+                  className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  <span className="absolute inset-3 rotate-[-5deg] rounded-2xl border border-dashed border-white/25 bg-[#F7FAF9]/[0.04] shadow-[0_12px_36px_rgba(0,0,0,0.22)] transition-transform group-hover:rotate-[-2deg]">
-                    <span className="flex h-full flex-col items-center justify-center gap-2 text-slate-400 group-hover:text-white">
-                      <Plus size={20} />
-                      <span className="text-xs font-bold">{t('home.referenceImage')}</span>
-                    </span>
-                  </span>
-                  <span className="absolute inset-x-5 bottom-2 h-px bg-gradient-to-r from-transparent via-brand/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
-
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  onKeyDown={(event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                      event.preventDefault();
-                      submit();
-                    }
-                  }}
-                  className="h-32 min-w-0 flex-1 resize-none bg-transparent px-1 text-lg leading-8 text-slate-100 outline-none placeholder:text-slate-500"
-                  placeholder={t('home.promptPlaceholder')}
-                />
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-4">
-                <div className="flex min-w-0 items-center rounded-2xl border border-white/10 bg-[#08090A]/45 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                  <button
-                    onClick={() => setNotice(t('home.highlight.agent.desc'))}
-                    className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-slate-950 shadow-[0_10px_30px_rgba(0,0,0,0.24)]"
-                  >
-                    <Bot size={16} />
-                    {t('home.agentMode')}
-                  </button>
-                  <button
-                    onClick={() => setNotice(t('home.referenceNotice'))}
-                    className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <ImagePlus size={16} />
-                    {t('home.referenceImage')}
-                  </button>
-                  <button
-                    onClick={() => setNotice(t('home.attachmentNotice'))}
-                    className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <Video size={16} />
-                    {t('home.video')}
-                  </button>
-                </div>
-                <button
-                  onClick={submit}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_25px_rgba(16,185,129,0.38)] transition-transform hover:scale-105 active:scale-95"
-                  aria-label={t('home.start')}
-                >
-                  <ArrowUp size={22} />
+                  <Video size={16} />
+                  {t('home.video')}
                 </button>
               </div>
             </div>

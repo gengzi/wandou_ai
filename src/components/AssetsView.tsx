@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Filter, Upload, FileVideo, Image as ImageIcon, FileText, FileAudio, Folder, MoreVertical, X, Plus } from 'lucide-react';
-import { AssetResponse, createAsset, getAsset, listAssets, listProjects, ProjectResponse } from '../lib/api';
+import { AssetPageResponse, AssetResponse, createAsset, getAsset, listAssets, listAssetsPage, listProjects, ProjectResponse, uploadAsset } from '../lib/api';
 
 const assetTabs = [
   { id: 'all', label: '全部' },
@@ -36,35 +36,33 @@ const ProjectFolderCard: React.FC<ProjectFolderCardProps> = ({
 }) => {
   return (
     <button onClick={onClick} className="group flex w-[232px] shrink-0 flex-col items-center text-center">
-      <div className="relative h-[142px] w-[224px] transition-transform duration-300 group-hover:-translate-y-1">
+      <div className="relative h-[130px] w-[224px] transition-transform duration-300 group-hover:-translate-y-1">
         <div
-          className="absolute left-4 top-3 h-[84px] w-[190px] rounded-[14px] border backdrop-blur-xl"
+          className="absolute left-5 top-4 h-[86px] w-[184px] rounded-[15px] border backdrop-blur-xl"
           style={{
             borderColor: palette.tab,
             background: palette.back,
-            boxShadow: active ? `0 18px 60px ${palette.glow}` : `0 14px 42px ${palette.glow}`,
+            boxShadow: active ? `0 18px 58px ${palette.glow}` : `0 12px 34px ${palette.glow}`,
           }}
         />
         <div
-          className="absolute left-[118px] top-3 h-7 w-[76px] rounded-t-[14px] border border-b-0 backdrop-blur-xl"
+          className="absolute left-[126px] top-4 h-7 w-[72px] rounded-t-[14px] border border-b-0 backdrop-blur-xl"
           style={{ borderColor: palette.tab, background: palette.back }}
         />
-        <div className="absolute left-[58px] top-[36px] h-[72px] w-[118px] rounded-[12px] border border-white/45 bg-white/55 shadow-[0_16px_36px_rgba(0,0,0,0.15)] backdrop-blur-md" />
-        <div className="absolute left-5 top-[48px] h-[74px] w-[190px] rounded-[14px] border border-white/30 bg-white/15 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl" />
         {previews.slice(0, 2).map((preview, index) => (
           <img
             key={`${title}-${preview}-${index}`}
             src={preview}
             alt=""
-            className={`absolute rounded-xl border border-white/50 object-cover shadow-lg ${index === 0 ? 'right-12 top-[26px] h-12 w-16' : 'right-7 top-[46px] h-14 w-[70px] blur-[1px] opacity-75'}`}
+            className={`absolute rounded-xl border border-white/45 object-cover shadow-lg ${index === 0 ? 'right-14 top-[24px] h-11 w-[60px]' : 'right-8 top-[40px] h-13 w-[66px] blur-[1px] opacity-70'}`}
           />
         ))}
         <div
-          className={`absolute left-1 top-[50px] h-[76px] w-[218px] overflow-hidden rounded-[15px] border border-white/25 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/45' : ''}`}
-          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.44), 0 16px 42px ${palette.glow}` }}
+          className={`absolute left-2 top-[54px] h-[72px] w-[216px] overflow-hidden rounded-[15px] border border-white/25 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/40' : ''}`}
+          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.36), 0 14px 34px ${palette.glow}` }}
         >
-          <div className="absolute inset-x-0 top-0 h-7" style={{ background: palette.lip }} />
-          <div className="absolute bottom-5 left-7 max-w-[154px] truncate text-lg font-black text-white drop-shadow">{title}</div>
+          <div className="absolute inset-x-0 top-0 h-6" style={{ background: palette.lip }} />
+          <div className="absolute bottom-5 left-7 max-w-[154px] truncate text-lg font-black text-white drop-shadow-sm">{title}</div>
         </div>
       </div>
       <div className="flex items-center justify-center gap-2">
@@ -84,9 +82,20 @@ export default function AssetsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeType, setActiveType] = useState('all');
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [assetPage, setAssetPage] = useState<AssetPageResponse>({
+    content: [],
+    totalElements: 0,
+    totalPages: 0,
+    page: 0,
+    size: 10,
+  });
+  const [loadingPage, setLoadingPage] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetResponse | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     projectId: '',
     canvasId: '',
@@ -130,9 +139,32 @@ export default function AssetsView() {
       .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '素材加载失败'));
   };
 
+  const refreshPage = () => {
+    setLoadingPage(true);
+    const projectId = selectedProjectId === 'all' || selectedProjectId === 'unassigned' ? undefined : selectedProjectId;
+    listAssetsPage({
+      projectId,
+      type: activeType,
+      keyword: query.trim(),
+      page,
+      size: pageSize,
+    })
+      .then(setAssetPage)
+      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '分页素材加载失败'))
+      .finally(() => setLoadingPage(false));
+  };
+
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    refreshPage();
+  }, [selectedProjectId, activeType, query, page, pageSize]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [selectedProjectId, activeType, query, pageSize]);
 
   const visibleAssets = assets.filter((asset) => {
     if (selectedProjectId === 'unassigned') return !asset.projectId;
@@ -140,12 +172,11 @@ export default function AssetsView() {
     return true;
   });
 
-  const filteredAssets = visibleAssets.filter((asset) => {
-    const matchesType = activeType === 'all' || asset.type === activeType;
-    const projectName = projectById.get(asset.projectId)?.name || '';
-    const searchText = `${asset.name} ${asset.type} ${asset.projectId} ${projectName}`.toLowerCase();
-    return matchesType && searchText.includes(query.trim().toLowerCase());
-  });
+  const filteredAssets = assetPage.content;
+  const totalPages = Math.max(1, assetPage.totalPages || 1);
+  const currentPage = Math.min(assetPage.page, totalPages - 1);
+  const pageStart = assetPage.totalElements === 0 ? 0 : currentPage * assetPage.size + 1;
+  const pageEnd = Math.min(assetPage.totalElements, currentPage * assetPage.size + filteredAssets.length);
 
   const openCreateForm = () => {
     const project = activeProject || projects[0] || null;
@@ -194,10 +225,52 @@ export default function AssetsView() {
       });
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
       setSelectedProjectId(asset.projectId || form.projectId);
+      setPage(0);
+      refreshPage();
       setShowCreateForm(false);
       setNotice('素材已登记到项目资产库。');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '素材登记失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!form.projectId.trim()) {
+      setError('请先选择素材所属项目，再上传文件。');
+      return;
+    }
+    const project = projectById.get(form.projectId.trim());
+    const type = file.type.startsWith('image/')
+      ? 'image'
+      : file.type.startsWith('video/')
+        ? 'video'
+        : file.type.startsWith('audio/')
+          ? 'audio'
+          : 'asset';
+    setSaving(true);
+    setError(null);
+    try {
+      const asset = await uploadAsset({
+        projectId: form.projectId.trim(),
+        canvasId: form.canvasId.trim() || project?.canvasId,
+        nodeId: form.nodeId.trim() || undefined,
+        type,
+        name: form.name.trim() || file.name,
+        file,
+      });
+      setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      setSelectedProjectId(asset.projectId || form.projectId);
+      setPage(0);
+      refreshPage();
+      setShowCreateForm(false);
+      setNotice(`${file.name} 已上传到项目素材库。`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '文件上传失败');
     } finally {
       setSaving(false);
     }
@@ -255,11 +328,11 @@ export default function AssetsView() {
         <section className="mb-8 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.012))] px-6 py-7">
           <div className="flex items-start gap-8 overflow-x-auto pb-2">
             <button onClick={openCreateForm} className="group flex w-[210px] shrink-0 flex-col items-center text-center">
-              <div className="relative h-[142px] w-[196px] transition-transform duration-300 group-hover:-translate-y-1">
-                <div className="absolute left-0 top-2 h-[96px] w-[176px] rounded-[18px] bg-slate-800/70 shadow-[0_18px_45px_rgba(0,0,0,0.22)]" />
-                <div className="absolute left-[86px] top-0 h-8 w-[76px] rounded-t-[16px] bg-slate-800/70" />
-                <div className="absolute inset-x-0 top-[20px] h-[96px] rounded-[18px] border border-white/10 bg-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" />
-                <div className="absolute inset-x-4 top-[36px] flex h-[68px] flex-col items-center justify-center gap-2 rounded-2xl bg-slate-700/55 text-slate-400">
+              <div className="relative h-[130px] w-[196px] transition-transform duration-300 group-hover:-translate-y-1">
+                <div className="absolute left-0 top-4 h-[82px] w-[172px] rounded-[18px] bg-slate-800/70 shadow-[0_12px_34px_rgba(0,0,0,0.20)]" />
+                <div className="absolute left-[88px] top-2 h-7 w-[72px] rounded-t-[16px] bg-slate-800/70" />
+                <div className="absolute inset-x-0 top-[34px] h-[78px] rounded-[18px] border border-white/10 bg-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" />
+                <div className="absolute inset-x-4 top-[44px] flex h-[58px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-slate-700/50 text-slate-400">
                   <Plus size={24} />
                   <div className="text-sm font-semibold leading-5">
                     点击新建或拖拽<br />文件夹到这里
@@ -275,8 +348,8 @@ export default function AssetsView() {
               active={selectedProjectId === 'all'}
               palette={folderPalettes[1]}
               previews={assets.filter((asset) => asset.thumbnailUrl || asset.url).map((asset) => asset.thumbnailUrl || asset.url).slice(0, 2)}
-              onClick={() => setSelectedProjectId('all')}
-            />
+                onClick={() => setSelectedProjectId('all')}
+              />
 
             {projects.map((project, index) => (
               <ProjectFolderCard
@@ -307,7 +380,7 @@ export default function AssetsView() {
           <h2 className="truncate text-xl font-bold text-white">
             {selectedProjectId === 'all' ? '全部项目素材' : selectedProjectId === 'unassigned' ? '未归档素材' : projectLabel(selectedProjectId)}
           </h2>
-          <div className="mt-1 text-sm text-slate-500">{visibleAssets.length} 个素材</div>
+          <div className="mt-1 text-sm text-slate-500">{assetPage.totalElements} 个素材</div>
         </div>
 
         <div className="mb-6 flex items-center justify-between gap-4">
@@ -327,6 +400,15 @@ export default function AssetsView() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand transition-colors" size={16} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="w-72 bg-[#1A1A1C] border border-white/5 focus:border-brand/50 rounded-lg pl-9 pr-4 py-2 outline-none text-sm transition-all" />
             </div>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50"
+            >
+              <option value={10}>10 / 页</option>
+              <option value={20}>20 / 页</option>
+              <option value={50}>50 / 页</option>
+            </select>
             <button onClick={() => setNotice('高级筛选会和项目标签、节点来源一起接入；当前支持项目、类型和搜索。')} className="p-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-400 transition-colors">
               <Filter size={18} />
             </button>
@@ -361,7 +443,8 @@ export default function AssetsView() {
                   <option key={project.id} value={project.id}>{project.name}</option>
                 ))}
               </select>
-              <button type="button" onClick={() => setNotice('真实文件上传需要对象存储接口。本轮先支持登记已有素材 URL。')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">上传文件</button>
+              <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleUploadFile} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">上传文件</button>
               <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} className="lg:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="素材 URL" />
               <input value={form.thumbnailUrl} onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })} className="lg:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="缩略图 URL（可选）" />
               <input value={form.canvasId} onChange={(event) => setForm({ ...form, canvasId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="画布 ID" />
@@ -388,7 +471,13 @@ export default function AssetsView() {
               </tr>
             </thead>
             <tbody>
-              {filteredAssets.length > 0 ? filteredAssets.map((asset) => (
+              {loadingPage ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
+                    正在加载素材...
+                  </td>
+                </tr>
+              ) : filteredAssets.length > 0 ? filteredAssets.map((asset) => (
                 <tr key={asset.id} onClick={() => openAsset(asset.id)} className="border-b border-white/5 hover:bg-white/5 transition-colors group cursor-pointer">
                   <td className="px-6 py-4 flex items-center space-x-3">
                     {getIcon(asset.type)}
@@ -409,12 +498,52 @@ export default function AssetsView() {
               )) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">
-                    {visibleAssets.length === 0 ? '当前项目暂无素材。智能体流程生成或手动登记的素材会出现在这里。' : '没有匹配当前搜索和类型筛选的素材。'}
+                    {assetPage.totalElements === 0 ? '当前条件暂无素材。智能体流程生成或手动登记的素材会出现在这里。' : '没有匹配当前搜索和类型筛选的素材。'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-6 py-4 text-sm text-slate-400">
+            <div>
+              {assetPage.totalElements > 0
+                ? `显示 ${pageStart}-${pageEnd} / ${assetPage.totalElements}`
+                : '暂无素材'}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(0)}
+                disabled={currentPage === 0 || loadingPage}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                首页
+              </button>
+              <button
+                onClick={() => setPage((value) => Math.max(0, value - 1))}
+                disabled={currentPage === 0 || loadingPage}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <span className="min-w-[86px] text-center text-slate-500">
+                {currentPage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
+                disabled={currentPage >= totalPages - 1 || loadingPage}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                下一页
+              </button>
+              <button
+                onClick={() => setPage(totalPages - 1)}
+                disabled={currentPage >= totalPages - 1 || loadingPage}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                末页
+              </button>
+            </div>
+          </div>
         </div>
       </main>
 

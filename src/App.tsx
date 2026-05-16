@@ -21,6 +21,12 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(Boolean(getAuthToken()));
 
   useEffect(() => {
+    const sharedProjectId = new URLSearchParams(window.location.search).get('projectId');
+    if (sharedProjectId) {
+      setWorkspaceProjectId(sharedProjectId);
+      setView('workspace');
+    }
+
     if (!getAuthToken()) {
       return;
     }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, Clock3, Database, WalletCards } from 'lucide-react';
-import { getMyUsage, UsageSummaryResponse } from '../lib/api';
+import { getMyUsage, listMyUsageRecordPage, ModelUsageRecordPageResponse, UsageSummaryResponse } from '../lib/api';
 
 function formatDuration(ms: number) {
   if (ms < 1000) return `${ms}ms`;
@@ -9,6 +9,16 @@ function formatDuration(ms: number) {
 
 export default function UsageView() {
   const [usage, setUsage] = useState<UsageSummaryResponse | null>(null);
+  const [recordPage, setRecordPage] = useState<ModelUsageRecordPageResponse>({
+    content: [],
+    totalElements: 0,
+    totalPages: 0,
+    page: 0,
+    size: 10,
+  });
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [loadingRecords, setLoadingRecords] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -17,7 +27,23 @@ export default function UsageView() {
       .catch((err) => setError(err instanceof Error ? err.message : '积分用量加载失败'));
   }, []);
 
-  const records = usage?.recentRecords || [];
+  useEffect(() => {
+    setLoadingRecords(true);
+    listMyUsageRecordPage(page, pageSize)
+      .then(setRecordPage)
+      .catch((err) => setError(err instanceof Error ? err.message : '模型请求记录加载失败'))
+      .finally(() => setLoadingRecords(false));
+  }, [page, pageSize]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [pageSize]);
+
+  const records = recordPage.content;
+  const totalPages = Math.max(1, recordPage.totalPages || 1);
+  const currentPage = Math.min(recordPage.page, totalPages - 1);
+  const pageStart = recordPage.totalElements === 0 ? 0 : currentPage * recordPage.size + 1;
+  const pageEnd = Math.min(recordPage.totalElements, currentPage * recordPage.size + records.length);
 
   return (
     <div className="h-full overflow-y-auto bg-[#08090A] px-10 py-8 text-slate-100">
@@ -60,6 +86,18 @@ export default function UsageView() {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-white/10 bg-[#101112]">
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">模型请求记录</div>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50"
+            >
+              <option value={10}>10 / 页</option>
+              <option value={20}>20 / 页</option>
+              <option value={50}>50 / 页</option>
+            </select>
+          </div>
           <div className="grid grid-cols-[1fr_120px_90px_90px_90px] border-b border-white/10 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
             <div>模型请求</div>
             <div>能力</div>
@@ -67,7 +105,9 @@ export default function UsageView() {
             <div>耗时</div>
             <div>状态</div>
           </div>
-          {records.length === 0 ? (
+          {loadingRecords ? (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">正在加载模型请求记录...</div>
+          ) : records.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-slate-500">暂无模型调用记录。</div>
           ) : (
             records.map((record) => (
@@ -85,6 +125,46 @@ export default function UsageView() {
               </div>
             ))
           )}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-4 py-4 text-sm text-slate-400">
+            <div>
+              {recordPage.totalElements > 0
+                ? `显示 ${pageStart}-${pageEnd} / ${recordPage.totalElements}`
+                : '暂无记录'}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(0)}
+                disabled={currentPage === 0 || loadingRecords}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                首页
+              </button>
+              <button
+                onClick={() => setPage((value) => Math.max(0, value - 1))}
+                disabled={currentPage === 0 || loadingRecords}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                上一页
+              </button>
+              <span className="min-w-[86px] text-center text-slate-500">
+                {currentPage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
+                disabled={currentPage >= totalPages - 1 || loadingRecords}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                下一页
+              </button>
+              <button
+                onClick={() => setPage(totalPages - 1)}
+                disabled={currentPage >= totalPages - 1 || loadingRecords}
+                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                末页
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

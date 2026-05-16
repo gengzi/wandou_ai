@@ -2,6 +2,7 @@ package com.wandou.ai.asset;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.asset.dto.AssetCreateRequest;
+import com.wandou.ai.asset.dto.AssetPageResponse;
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.common.ApiResponse;
 import jakarta.validation.Valid;
@@ -34,6 +35,18 @@ public class AssetController {
     @SaCheckPermission("asset:read")
     public ApiResponse<List<AssetResponse>> list(@RequestParam(required = false) String projectId) {
         return ApiResponse.ok(assetService.list(projectId));
+    }
+
+    @GetMapping("/page")
+    @SaCheckPermission("asset:read")
+    public ApiResponse<AssetPageResponse> page(
+            @RequestParam(required = false) String projectId,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.ok(assetService.page(projectId, type, keyword, page, size));
     }
 
     @PostMapping

@@ -3,8 +3,10 @@ package com.wandou.ai.usage;
 import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.config.WandouAiProperties;
 import com.wandou.ai.modelconfig.ModelConfigEntity;
+import com.wandou.ai.usage.dto.ModelUsageRecordPageResponse;
 import com.wandou.ai.usage.dto.ModelUsageRecordResponse;
 import com.wandou.ai.usage.dto.UsageSummaryResponse;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,6 +90,19 @@ public class ModelUsageService {
         return repository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, safeLimit)).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public ModelUsageRecordPageResponse recordPage(String userId, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        Page<ModelUsageRecord> result = repository.findPageByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(safePage, safeSize));
+        return new ModelUsageRecordPageResponse(
+                result.getContent().stream().map(this::toResponse).toList(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.getNumber(),
+                result.getSize()
+        );
     }
 
     private int creditsFor(String capability, int requestCount) {
