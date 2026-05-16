@@ -1752,44 +1752,50 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       <div className="flex-1 min-w-0 flex bg-[#0B0B0C] relative overflow-hidden">
          {/* Center Area container */}
          <div className="flex-1 flex flex-col z-0 relative">
-              <div className="flex-1 relative bg-[#0B0B0C]">
+              <div className="flex-1 min-h-0 bg-[#0B0B0C]">
                 <ReactFlowProvider>
-                  {/* Left Canvas Nav */}
-                  <div className="absolute left-6 top-6 z-20 hidden xl:flex flex-col space-y-5 rounded-2xl border border-white/10 bg-[#0B0B0C]/70 px-4 py-4 backdrop-blur">
-                     {canvasSections.map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => focusCanvasSection(item)}
-                          className="group flex items-center space-x-4 text-left"
-                        >
-                           <div className={`h-1.5 w-1.5 rounded-full ${item === highlightedCanvasSection ? 'bg-brand shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-slate-600 group-hover:bg-slate-400'} transition-all`} />
-                           <span className={`text-[13px] tracking-wide ${item === highlightedCanvasSection ? 'font-medium text-white' : 'text-slate-400 group-hover:text-slate-300'} transition-colors`}>{item}</span>
-                        </button>
-                     ))}
-                  </div>
+                  <div className="flex h-full min-h-0">
+                    {/* Left Canvas Nav */}
+                    <aside className="hidden w-[164px] shrink-0 px-4 py-6 xl:block">
+                      <div className="flex flex-col space-y-4 rounded-2xl border border-white/10 bg-[#0B0B0C]/72 px-4 py-4 backdrop-blur">
+                        {canvasSections.map((item) => (
+                          <button
+                            key={item}
+                            type="button"
+                            onClick={() => focusCanvasSection(item)}
+                            className="group flex min-h-9 items-center space-x-4 text-left"
+                          >
+                            <div className={`h-1.5 w-1.5 rounded-full ${item === highlightedCanvasSection ? 'bg-brand shadow-[0_0_10px_rgba(16,185,129,1)]' : 'bg-slate-600 group-hover:bg-slate-400'} transition-all`} />
+                            <span className={`text-[13px] tracking-wide ${item === highlightedCanvasSection ? 'font-medium text-white' : 'text-slate-400 group-hover:text-slate-300'} transition-colors`}>{item}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </aside>
 
-                  <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onNodesDelete={handleNodesDelete}
-                    onEdgesDelete={handleEdgesDelete}
-                    onNodeClick={handleNodeClick}
-                    onNodeDragStop={handleNodeDragStop}
-                    onPaneClick={handlePaneClick}
-                    onInit={setFlowInstance}
-                    nodeTypes={nodeTypes}
-                    minZoom={0.1}
-                    maxZoom={2}
-                    defaultViewport={{ x: 24, y: 28, zoom: 0.72 }}
-                    fitView={false}
-                  >
-                    <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#555" />
-                    <MiniMap className="hidden xl:block" style={{ backgroundColor: '#1A1A1C', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} nodeColor="#333" maskColor="rgba(0,0,0,0.5)" />
-                  </ReactFlow>
+                    <div className="relative min-w-0 flex-1">
+                      <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onNodesDelete={handleNodesDelete}
+                        onEdgesDelete={handleEdgesDelete}
+                        onNodeClick={handleNodeClick}
+                        onNodeDragStop={handleNodeDragStop}
+                        onPaneClick={handlePaneClick}
+                        onInit={setFlowInstance}
+                        nodeTypes={nodeTypes}
+                        minZoom={0.1}
+                        maxZoom={2}
+                        defaultViewport={{ x: 40, y: 28, zoom: 0.72 }}
+                        fitView={false}
+                      >
+                        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#555" />
+                        <MiniMap className="hidden xl:block" style={{ backgroundColor: '#1A1A1C', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} nodeColor="#333" maskColor="rgba(0,0,0,0.5)" />
+                      </ReactFlow>
+                    </div>
+                  </div>
                 </ReactFlowProvider>
               </div>
           </div>

@@ -6,9 +6,9 @@ import {
   ChevronRight,
   Clapperboard,
   Film,
-  ImagePlus,
   Layers3,
   MessageSquareText,
+  Paperclip,
   Plus,
   Sparkles,
   Video,
@@ -24,7 +24,7 @@ interface HomeViewProps {
 }
 
 export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
-  const { t, toggleLocale } = useI18n();
+  const { locale, t, toggleLocale } = useI18n();
   const [prompt, setPrompt] = useState('');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -141,7 +141,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-lg font-black italic text-white shadow-[0_0_24px_rgba(16,185,129,0.35)]">W</div>
           <div className="text-left">
             <div className="text-lg font-black tracking-tight text-white">{t('home.product')}</div>
-            <div className="text-[11px] text-slate-500">{t('home.subtitle')}</div>
+            {t('home.subtitle') && <div className="text-[11px] text-slate-500">{t('home.subtitle')}</div>}
           </div>
         </button>
 
@@ -149,7 +149,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
           <button
             onClick={() => {
               toggleLocale();
-              setNotice(t('home.languageNotice'));
+              setNotice(locale === 'zh-CN' ? '界面已切换为英文。' : '界面已切换为简体中文。');
             }}
             className="rounded-xl bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/10"
           >
@@ -198,12 +198,12 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
               <span className="text-xs font-semibold text-slate-300">{t('home.agentReady')}</span>
             </div>
 
-            <div className="flex min-h-[92px] items-center gap-4 rounded-[34px] border border-brand/35 bg-[radial-gradient(circle_at_34%_0%,rgba(16,185,129,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,20,19,0.95))] px-5 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.42)] backdrop-blur">
+            <div className="flex min-h-[132px] items-stretch gap-4 rounded-[34px] border border-brand/35 bg-[radial-gradient(circle_at_34%_0%,rgba(16,185,129,0.18),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,20,19,0.95))] px-5 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.42)] backdrop-blur">
               <input ref={referenceInputRef} type="file" accept="image/*" className="hidden" onChange={handleReferenceUpload} />
               <button
                 onClick={openReferencePicker}
                 disabled={uploadingReference}
-                className="group relative flex h-[68px] w-[138px] shrink-0 items-center justify-center rounded-[24px] border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:border-brand/40 hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-70"
+                className="group relative flex w-[124px] shrink-0 items-center justify-center gap-3 rounded-[24px] border border-white/10 bg-white/[0.045] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:border-brand/40 hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-70"
                 aria-label={t('home.addAttachment')}
               >
                 <span className="relative h-[54px] w-[54px] rotate-[-5deg] overflow-hidden rounded-2xl border border-dashed border-white/28 bg-[#F7FAF9]/[0.04] transition-transform group-hover:rotate-[-2deg]">
@@ -212,11 +212,13 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
                   ) : (
                     <span className="flex h-full flex-col items-center justify-center text-slate-400 group-hover:text-white">
                       <Plus size={17} />
-                      <span className="mt-1 text-[10px] font-black leading-none">图片</span>
                     </span>
                   )}
                 </span>
-                <span className="ml-2 text-sm font-black text-slate-300 group-hover:text-white">{uploadingReference ? '上传中' : '附件'}</span>
+                <span className="flex items-center gap-1.5 text-sm font-black text-slate-300 group-hover:text-white">
+                  <Paperclip size={15} />
+                  {uploadingReference ? '上传中' : '附件'}
+                </span>
               </button>
 
               <textarea
@@ -228,13 +230,13 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
                     submit();
                   }
                 }}
-                className="h-14 min-w-0 flex-1 resize-none bg-transparent py-2 text-xl leading-10 text-slate-100 outline-none placeholder:text-slate-500"
-                placeholder="描述或输入指令（支持参考图、视频任务、分镜生成）..."
+                className="min-h-[100px] min-w-0 flex-1 resize-none bg-transparent py-2 text-xl leading-8 text-slate-100 outline-none placeholder:text-slate-500"
+                placeholder={t('home.promptPlaceholder')}
               />
 
               <button
                 onClick={() => setNotice(t('home.highlight.agent.desc'))}
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex h-14 w-14 shrink-0 self-center items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label={t('home.agentMode')}
               >
                 <Sparkles size={25} />
@@ -242,7 +244,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
 
               <button
                 onClick={submit}
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_25px_rgba(16,185,129,0.38)] transition-transform hover:scale-105 active:scale-95"
+                className="flex h-14 w-14 shrink-0 self-center items-center justify-center rounded-full bg-brand text-white shadow-[0_0_25px_rgba(16,185,129,0.38)] transition-transform hover:scale-105 active:scale-95"
                 aria-label={t('home.start')}
               >
                 <ArrowUp size={24} />
@@ -257,14 +259,6 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
                 >
                   <Bot size={16} />
                   {t('home.agentMode')}
-                </button>
-                <button
-                  onClick={openReferencePicker}
-                  disabled={uploadingReference}
-                  className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                  <ImagePlus size={16} />
-                  {uploadingReference ? '上传中' : t('home.referenceImage')}
                 </button>
                 <button
                   onClick={() => setNotice(t('home.attachmentNotice'))}

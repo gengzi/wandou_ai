@@ -1,14 +1,29 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Filter, UserPlus, MoreHorizontal, ShieldCheck, Mail, Activity, Package, X } from 'lucide-react';
-import { inviteUser, listUsers, UserResponse } from '../lib/api';
+import { getUserSummary, inviteUser, listUsersPage, UserPageResponse, UserResponse, UserSummaryResponse } from '../lib/api';
 
 export default function UsersView() {
-  const [users, setUsers] = useState<UserResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [userPage, setUserPage] = useState<UserPageResponse>({
+    content: [],
+    totalElements: 0,
+    totalPages: 0,
+    page: 0,
+    size: 10,
+  });
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [summary, setSummary] = useState<UserSummaryResponse>({
+    totalUsers: 0,
+    adminUsers: 0,
+    activeUsers: 0,
+    permissionCount: 0,
+  });
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviteForm, setInviteForm] = useState({
@@ -18,12 +33,32 @@ export default function UsersView() {
   });
 
   useEffect(() => {
-    listUsers()
-      .then(setUsers)
-      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '用户列表加载失败'));
+    getUserSummary()
+      .then(setSummary)
+      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '用户汇总加载失败'));
   }, []);
 
-  const activeUsers = useMemo(() => users.filter((user) => user.status === 'active'), [users]);
+  const refreshPage = () => {
+    setLoadingPage(true);
+    listUsersPage({
+      keyword: query.trim(),
+      role: roleFilter,
+      status: statusFilter,
+      page,
+      size: pageSize,
+    })
+      .then(setUserPage)
+      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '成员分页加载失败'))
+      .finally(() => setLoadingPage(false));
+  };
+
+  useEffect(() => {
+    refreshPage();
+  }, [query, roleFilter, statusFilter, page, pageSize]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [query, roleFilter, statusFilter, pageSize]);
 
   const roleLabel = (user: UserResponse) => {
     const role = user.roles[0] || 'viewer';
@@ -36,14 +71,11 @@ export default function UsersView() {
     return user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '从未登录';
   };
 
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => {
-      const matchesQuery = `${user.name} ${user.email}`.toLowerCase().includes(query.trim().toLowerCase());
-      const matchesRole = roleFilter === 'all' || user.roles.includes(roleFilter);
-      const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
-      return matchesQuery && matchesRole && matchesStatus;
-    });
-  }, [query, roleFilter, statusFilter, users]);
+  const filteredUsers = userPage.content;
+  const totalPages = Math.max(1, userPage.totalPages || 1);
+  const currentPage = Math.min(userPage.page, totalPages - 1);
+  const pageStart = userPage.totalElements === 0 ? 0 : currentPage * userPage.size + 1;
+  const pageEnd = Math.min(userPage.totalElements, currentPage * userPage.size + filteredUsers.length);
 
   const handleInvite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -59,7 +91,14 @@ export default function UsersView() {
         email: inviteForm.email.trim(),
         role: inviteForm.role,
       });
-      setUsers((current) => [user, ...current.filter((item) => item.id !== user.id)]);
+      setSummary((current) => ({
+        ...current,
+        totalUsers: current.totalUsers + 1,
+        activeUsers: current.activeUsers + (user.status === 'active' ? 1 : 0),
+        adminUsers: current.adminUsers + (user.roles.includes('admin') ? 1 : 0),
+      }));
+      setPage(0);
+      refreshPage();
       setInviteForm({ name: '', email: '', role: 'viewer' });
       setShowInviteForm(false);
       setNotice('成员已邀请。');
@@ -85,10 +124,10 @@ export default function UsersView() {
 
       <div className="grid grid-cols-4 gap-6 mb-8">
         {[
-          { label: '总用户数', value: users.length.toString(), icon: <UserPlus className="text-blue-400" /> },
-          { label: '管理员', value: users.filter((user) => user.roles.includes('admin')).length.toString(), icon: <Package className="text-brand" /> },
-          { label: '当前启用', value: activeUsers.length.toString(), icon: <Activity className="text-green-400" /> },
-          { label: '权限点', value: new Set(users.flatMap((user) => user.permissions)).size.toString(), icon: <Mail className="text-yellow-400" /> },
+          { label: '总用户数', value: summary.totalUsers.toString(), icon: <UserPlus className="text-blue-400" /> },
+          { label: '管理员', value: summary.adminUsers.toString(), icon: <Package className="text-brand" /> },
+          { label: '当前启用', value: summary.activeUsers.toString(), icon: <Activity className="text-green-400" /> },
+          { label: '权限点', value: summary.permissionCount.toString(), icon: <Mail className="text-yellow-400" /> },
         ].map(stat => (
           <div key={stat.label} className="bg-[#1A1A1C] border border-white/5 rounded-xl p-5 flex items-center justify-between">
             <div>
@@ -119,6 +158,11 @@ export default function UsersView() {
             <option value="all">全部状态</option>
             <option value="active">启用</option>
             <option value="disabled">停用</option>
+          </select>
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50">
+            <option value={10}>10 / 页</option>
+            <option value={20}>20 / 页</option>
+            <option value={50}>50 / 页</option>
           </select>
           <button onClick={() => setNotice('高级筛选、角色修改和禁用操作需要后端用户管理接口，当前支持本地筛选。')} className="px-3 py-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-300 text-sm flex items-center space-x-2 transition-colors">
             <Filter size={16} />
@@ -171,7 +215,13 @@ export default function UsersView() {
             </tr>
           </thead>
           <tbody>
-            {filteredUsers.map((user) => (
+            {loadingPage ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
+                  正在加载成员...
+                </td>
+              </tr>
+            ) : filteredUsers.map((user) => (
               <tr key={user.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-3">
@@ -209,7 +259,7 @@ export default function UsersView() {
                 </td>
               </tr>
             ))}
-            {filteredUsers.length === 0 && (
+            {!loadingPage && filteredUsers.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
                   没有匹配当前搜索和筛选条件的成员。
@@ -218,6 +268,46 @@ export default function UsersView() {
             )}
           </tbody>
         </table>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-6 py-4 text-sm text-slate-400">
+          <div>
+            {userPage.totalElements > 0
+              ? `显示 ${pageStart}-${pageEnd} / ${userPage.totalElements}`
+              : '暂无成员'}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(0)}
+              disabled={currentPage === 0 || loadingPage}
+              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              首页
+            </button>
+            <button
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+              disabled={currentPage === 0 || loadingPage}
+              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              上一页
+            </button>
+            <span className="min-w-[86px] text-center text-slate-500">
+              {currentPage + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
+              disabled={currentPage >= totalPages - 1 || loadingPage}
+              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              下一页
+            </button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={currentPage >= totalPages - 1 || loadingPage}
+              className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              末页
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

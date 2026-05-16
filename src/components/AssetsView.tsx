@@ -139,14 +139,18 @@ export default function AssetsView() {
       .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '素材加载失败'));
   };
 
-  const refreshPage = () => {
+  const refreshPage = (pageOverride = page, projectIdOverride = selectedProjectId) => {
     setLoadingPage(true);
-    const projectId = selectedProjectId === 'all' || selectedProjectId === 'unassigned' ? undefined : selectedProjectId;
+    const projectId = projectIdOverride === 'all'
+      ? undefined
+      : projectIdOverride === 'unassigned'
+        ? '__unassigned__'
+        : projectIdOverride;
     listAssetsPage({
       projectId,
       type: activeType,
       keyword: query.trim(),
-      page,
+      page: pageOverride,
       size: pageSize,
     })
       .then(setAssetPage)
@@ -226,7 +230,7 @@ export default function AssetsView() {
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
       setSelectedProjectId(asset.projectId || form.projectId);
       setPage(0);
-      refreshPage();
+      refreshPage(0, asset.projectId || form.projectId);
       setShowCreateForm(false);
       setNotice('素材已登记到项目资产库。');
     } catch (nextError) {
@@ -266,7 +270,7 @@ export default function AssetsView() {
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
       setSelectedProjectId(asset.projectId || form.projectId);
       setPage(0);
-      refreshPage();
+      refreshPage(0, asset.projectId || form.projectId);
       setShowCreateForm(false);
       setNotice(`${file.name} 已上传到项目素材库。`);
     } catch (nextError) {
@@ -348,8 +352,8 @@ export default function AssetsView() {
               active={selectedProjectId === 'all'}
               palette={folderPalettes[1]}
               previews={assets.filter((asset) => asset.thumbnailUrl || asset.url).map((asset) => asset.thumbnailUrl || asset.url).slice(0, 2)}
-                onClick={() => setSelectedProjectId('all')}
-              />
+              onClick={() => setSelectedProjectId('all')}
+            />
 
             {projects.map((project, index) => (
               <ProjectFolderCard
@@ -420,38 +424,6 @@ export default function AssetsView() {
             <span>{notice}</span>
             <button onClick={() => setNotice(null)} className="text-xs font-semibold text-slate-300 hover:text-white">关闭</button>
           </div>
-        )}
-
-        {showCreateForm && (
-          <form onSubmit={handleCreateAsset} className="mb-5 rounded-xl border border-white/10 bg-[#121213] p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-white">登记项目素材</h2>
-              <button type="button" onClick={() => setShowCreateForm(false)} className="text-slate-500 hover:text-white"><X size={16} /></button>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-4">
-              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="名称" />
-              <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
-                <option value="image">图片</option>
-                <option value="video">视频</option>
-                <option value="audio">音频</option>
-                <option value="model">模型</option>
-                <option value="file">文件</option>
-              </select>
-              <select value={form.projectId} onChange={(event) => handleProjectChange(event.target.value)} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
-                <option value="">选择项目</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>{project.name}</option>
-                ))}
-              </select>
-              <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleUploadFile} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">上传文件</button>
-              <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} className="lg:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="素材 URL" />
-              <input value={form.thumbnailUrl} onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })} className="lg:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="缩略图 URL（可选）" />
-              <input value={form.canvasId} onChange={(event) => setForm({ ...form, canvasId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="画布 ID" />
-              <input value={form.nodeId} onChange={(event) => setForm({ ...form, nodeId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="节点 ID（可选）" />
-              <button type="submit" disabled={saving} className="lg:col-span-2 rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">{saving ? '保存中...' : '保存到项目'}</button>
-            </div>
-          </form>
         )}
 
         <div className="flex-1 overflow-hidden rounded-2xl border border-white/5 bg-[#121213]">
@@ -545,6 +517,54 @@ export default function AssetsView() {
             </div>
           </div>
         </div>
+
+        {showCreateForm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 py-8 backdrop-blur-sm">
+            <form onSubmit={handleCreateAsset} className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#121213] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+              <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-5 py-4">
+                <div>
+                  <h2 className="text-sm font-bold text-white">登记项目素材</h2>
+                  <p className="mt-1 text-xs text-slate-500">上传文件或登记外链，素材会归档到所选项目。</p>
+                </div>
+                <button type="button" onClick={() => setShowCreateForm(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="关闭登记素材">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="grid gap-3 p-5 md:grid-cols-2">
+                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="名称" />
+                <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+                  <option value="image">图片</option>
+                  <option value="video">视频</option>
+                  <option value="audio">音频</option>
+                  <option value="model">模型</option>
+                  <option value="file">文件</option>
+                </select>
+                <select value={form.projectId} onChange={(event) => handleProjectChange(event.target.value)} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+                  <option value="">选择项目</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60">
+                  上传文件
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleUploadFile} />
+                <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="素材 URL" />
+                <input value={form.thumbnailUrl} onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="缩略图 URL（可选）" />
+                <input value={form.canvasId} onChange={(event) => setForm({ ...form, canvasId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="画布 ID" />
+                <input value={form.nodeId} onChange={(event) => setForm({ ...form, nodeId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="节点 ID（可选）" />
+              </div>
+              <div className="flex justify-end gap-3 border-t border-white/5 px-5 py-4">
+                <button type="button" onClick={() => setShowCreateForm(false)} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                  取消
+                </button>
+                <button type="submit" disabled={saving} className="rounded-lg bg-brand px-5 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">
+                  {saving ? '保存中...' : '保存到项目'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </main>
 
       {selectedAsset && (

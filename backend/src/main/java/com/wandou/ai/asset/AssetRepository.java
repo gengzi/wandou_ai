@@ -13,14 +13,18 @@ public interface AssetRepository extends JpaRepository<AssetEntity, String> {
 
     @Query("""
             select asset from AssetEntity asset
-            where (:projectId is null or :projectId = '' or asset.projectId = :projectId)
+            where (
+                    :projectId is null or :projectId = ''
+                    or (:projectId = '__unassigned__' and (asset.projectId is null or asset.projectId = ''))
+                    or asset.projectId = :projectId
+                  )
               and (:type is null or :type = '' or :type = 'all' or asset.type = :type)
               and (
                     :keyword is null or :keyword = ''
                     or lower(asset.name) like lower(concat('%', :keyword, '%'))
                     or lower(asset.type) like lower(concat('%', :keyword, '%'))
-                    or lower(asset.projectId) like lower(concat('%', :keyword, '%'))
-                    or lower(asset.nodeId) like lower(concat('%', :keyword, '%'))
+                    or lower(coalesce(asset.projectId, '')) like lower(concat('%', :keyword, '%'))
+                    or lower(coalesce(asset.nodeId, '')) like lower(concat('%', :keyword, '%'))
               )
             """)
     Page<AssetEntity> search(

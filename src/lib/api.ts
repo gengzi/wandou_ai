@@ -175,6 +175,21 @@ export interface UserResponse {
   lastLoginAt?: string;
 }
 
+export interface UserPageResponse {
+  content: UserResponse[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
+}
+
+export interface UserSummaryResponse {
+  totalUsers: number;
+  adminUsers: number;
+  activeUsers: number;
+  permissionCount: number;
+}
+
 export interface ModelUsageRecordResponse {
   id: string;
   runId?: string;
@@ -279,7 +294,7 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     headers: authHeaders(options?.headers),
   });
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(await responseErrorMessage(response));
   }
 
   const result = (await response.json()) as ApiResponse<T>;
@@ -287,6 +302,24 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(result.message || 'Request failed');
   }
   return result.data;
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const fallback = `请求失败：${response.status}`;
+  try {
+    const text = await response.text();
+    if (!text) {
+      return fallback;
+    }
+    try {
+      const parsed = JSON.parse(text) as Partial<ApiResponse<unknown>> & { error?: string };
+      return parsed.message || parsed.error || fallback;
+    } catch {
+      return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+    }
+  } catch {
+    return fallback;
+  }
 }
 
 export async function login(payload: { email: string; password: string }): Promise<LoginResponse> {
@@ -313,6 +346,26 @@ export async function getCurrentUser(): Promise<UserResponse> {
 
 export async function listUsers(): Promise<UserResponse[]> {
   return requestJson<UserResponse[]>('/api/users');
+}
+
+export async function getUserSummary(): Promise<UserSummaryResponse> {
+  return requestJson<UserSummaryResponse>('/api/users/summary');
+}
+
+export async function listUsersPage(payload: {
+  keyword?: string;
+  role?: string;
+  status?: string;
+  page?: number;
+  size?: number;
+}): Promise<UserPageResponse> {
+  const url = new URL(apiUrl('/api/users/page'));
+  if (payload.keyword) url.searchParams.set('keyword', payload.keyword);
+  if (payload.role) url.searchParams.set('role', payload.role);
+  if (payload.status) url.searchParams.set('status', payload.status);
+  url.searchParams.set('page', String(payload.page ?? 0));
+  url.searchParams.set('size', String(payload.size ?? 10));
+  return requestJson<UserPageResponse>(url.toString());
 }
 
 export async function getMyUsage(): Promise<UsageSummaryResponse> {

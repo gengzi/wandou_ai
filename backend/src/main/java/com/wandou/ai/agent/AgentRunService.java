@@ -272,7 +272,7 @@ public class AgentRunService {
                     Map.of("sourceNodeId", scriptNode.id(), "step", "character")
             );
             addEdge(run, scriptNode.id(), characterNode.id());
-            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", characterOutput.output());
+            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", enrichCharacterOutput(characterOutput.output(), referenceAssets));
             publishNodeUpdated(run, updatedCharacterNode);
 
             CanvasNodeResponse storyboardNode = addNode(run,
@@ -852,6 +852,51 @@ public class AgentRunService {
                     return item;
                 })
                 .toList();
+    }
+
+    private static Map<String, Object> enrichCharacterOutput(Map<String, Object> output, List<ReferenceAsset> referenceAssets) {
+        if (referenceAssets == null || referenceAssets.isEmpty()) {
+            return output;
+        }
+        Map<String, Object> next = new java.util.LinkedHashMap<>(output);
+        List<Map<String, Object>> referenceOutput = referenceAssetOutput(referenceAssets);
+        next.put("referenceAssets", referenceOutput);
+        Object characters = output.get("characters");
+        if (!(characters instanceof List<?> items) || items.isEmpty()) {
+            next.put("characters", referenceAssets.stream()
+                    .map(asset -> Map.<String, Object>of(
+                            "name", asset.name(),
+                            "prompt", "参考项目素材 " + asset.name() + "，保持图片中的角色外观、轮廓、色彩和可识别特征。",
+                            "images", List.of(referenceDisplayUrl(asset)),
+                            "sourceAssetId", asset.id()
+                    ))
+                    .toList());
+            return next;
+        }
+        java.util.ArrayList<Map<String, Object>> enrichedCharacters = new java.util.ArrayList<>();
+        int index = 0;
+        for (Object item : items) {
+            if (item instanceof Map<?, ?> character) {
+                Map<String, Object> enriched = new java.util.LinkedHashMap<>();
+                character.forEach((key, value) -> {
+                    if (key instanceof String stringKey && value != null) {
+                        enriched.put(stringKey, value);
+                    }
+                });
+                ReferenceAsset asset = referenceAssets.get(index % referenceAssets.size());
+                enriched.putIfAbsent("sourceAssetId", asset.id());
+                enriched.putIfAbsent("images", List.of(referenceDisplayUrl(asset)));
+                enriched.putIfAbsent("referenceAsset", referenceOutput.get(index % referenceOutput.size()));
+                enrichedCharacters.add(enriched);
+                index++;
+            }
+        }
+        next.put("characters", enrichedCharacters);
+        return next;
+    }
+
+    private static String referenceDisplayUrl(ReferenceAsset asset) {
+        return asset.thumbnailUrl() == null || asset.thumbnailUrl().isBlank() ? asset.url() : asset.thumbnailUrl();
     }
 
     private static List<String> providerReferenceUrls(List<ReferenceAsset> referenceAssets) {
