@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle } from 'lucide-react';
+import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, Paperclip, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
 import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, generateChat, generateImage, generateVideo, getCanvas, getConversation, getProject, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
+import { AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, TaskResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodePosition } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -211,14 +211,20 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [isTyping, setIsTyping] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<string>('idle');
+  const [runError, setRunError] = useState('');
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const [stepOutputs, setStepOutputs] = useState<Record<string, StepOutputState>>({});
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskResponse | null>(null);
+  const [runDetail, setRunDetail] = useState<any | null>(null);
   const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const processedEventIdsRef = useRef<Set<string>>(new Set());
+  const internallyDeletedNodesRef = useRef<Set<string>>(new Set());
+  const internallyDeletedEdgesRef = useRef<Set<string>>(new Set());
   const stepOutputsRef = useRef<Record<string, StepOutputState>>({});
   const autoStartedPromptRef = useRef<string>('');
 
@@ -240,7 +246,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         : runStatus === 'cancelled'
           ? '本次生成已取消。'
           : runStatus === 'failed'
-            ? '本次生成失败，请查看后端错误。'
+            ? runError || '本次生成失败，请查看后端错误。'
             : activeRunId
               ? '多 Agent 生成流程运行中'
               : '等待创作指令';
@@ -280,6 +286,69 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       setSetupError(error instanceof Error ? `节点位置保存失败：${error.message}` : '节点位置保存失败。');
     }
   }, [project]);
+
+  const deleteNodePersistently = useCallback(async (nodeId: string) => {
+    if (!project) {
+      setSetupError('工作区正在连接后端，请稍后再操作节点。');
+      return;
+    }
+    const previousNodes = nodes;
+    const previousEdges = edges;
+    internallyDeletedNodesRef.current.add(nodeId);
+    edges
+      .filter((edge) => edge.source === nodeId || edge.target === nodeId)
+      .forEach((edge) => internallyDeletedEdgesRef.current.add(edge.id));
+    setNodes((current) => current.filter((node) => node.id !== nodeId));
+    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    try {
+      await deleteCanvasNode(project.canvasId, nodeId);
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null);
+      }
+      setNotice('节点已从画布删除。');
+    } catch (error) {
+      console.error(error);
+      setNodes(previousNodes);
+      setEdges(previousEdges);
+      setSetupError(error instanceof Error ? `节点删除失败：${error.message}` : '节点删除失败。');
+    }
+  }, [edges, nodes, project, selectedNodeId, setEdges, setNodes]);
+
+  const deleteEdgePersistently = useCallback(async (edgeId: string) => {
+    if (!project) {
+      setSetupError('工作区正在连接后端，请稍后再操作连线。');
+      return;
+    }
+    const previousEdges = edges;
+    internallyDeletedEdgesRef.current.add(edgeId);
+    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+    try {
+      await deleteCanvasEdge(project.canvasId, edgeId);
+      setNotice('连线已从画布删除。');
+    } catch (error) {
+      console.error(error);
+      setEdges(previousEdges);
+      setSetupError(error instanceof Error ? `连线删除失败：${error.message}` : '连线删除失败。');
+    }
+  }, [edges, project, setEdges]);
+
+  const handleNodesDelete = useCallback((deletedNodes: Node[]) => {
+    deletedNodes.forEach((node) => {
+      if (internallyDeletedNodesRef.current.delete(node.id)) {
+        return;
+      }
+      void deleteNodePersistently(node.id);
+    });
+  }, [deleteNodePersistently]);
+
+  const handleEdgesDelete = useCallback((deletedEdges: Edge[]) => {
+    deletedEdges.forEach((edge) => {
+      if (internallyDeletedEdgesRef.current.delete(edge.id)) {
+        return;
+      }
+      void deleteEdgePersistently(edge.id);
+    });
+  }, [deleteEdgePersistently]);
 
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
@@ -440,6 +509,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     const data = event.data || {};
     if (event.event === 'run.started') {
       setRunStatus('running');
+      setRunError('');
     }
 
     if (event.event === 'message.delta') {
@@ -467,10 +537,12 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
 
     if (event.event === 'node.updated') {
-      updateNodeFromEvent(data.nodeId, data.status, data.output, event.createdAt);
-      const currentNode = nodes.find((node) => node.id === data.nodeId);
-      if (currentNode) {
-        setActiveCanvasSection(sectionForNode(currentNode));
+      if (data.node) {
+        const flowNode = toFlowNode(data.node);
+        upsertNode(data.node);
+        setActiveCanvasSection(sectionForNode(flowNode));
+      } else {
+        updateNodeFromEvent(data.nodeId, data.status, data.output, event.createdAt);
       }
     }
 
@@ -543,13 +615,16 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     if (event.event === 'run.completed' || event.event === 'run.failed' || event.event === 'run.cancelled') {
       setRunStatus(event.event === 'run.completed' ? 'success' : event.event === 'run.cancelled' ? 'cancelled' : 'failed');
+      if (event.event === 'run.failed') {
+        setRunError(getString(data.error, data.message, '本次生成失败。'));
+      }
       setConfirmation(null);
       setIsTyping(false);
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
       setActiveRunId(null);
     }
-  }, [nodes, updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
+  }, [updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
 
   const runAgent = useCallback(async (message: string, options?: { mode?: string; nodeId?: string }) => {
     if (!message.trim()) return;
@@ -624,6 +699,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
       setActiveRunId(run.runId);
       setRunStatus('running');
+      setRunError('');
       setConfirmation(null);
       const source = createRunEventSource(run.runId);
       eventSourceRef.current = source;
@@ -725,6 +801,32 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
   };
 
+  const handleOpenTask = async (taskId: string) => {
+    try {
+      setSelectedTaskDetail(await getTask(taskId));
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `任务详情加载失败：${error.message}` : '任务详情加载失败。');
+    }
+  };
+
+  const handleOpenRunDetail = async () => {
+    if (!activeRunId) {
+      setNotice('当前没有正在运行的 Agent Run。');
+      return;
+    }
+    try {
+      setRunDetail(await getAgentRun(activeRunId));
+    } catch (error) {
+      console.error(error);
+      setSetupError(error instanceof Error ? `Run 详情加载失败：${error.message}` : 'Run 详情加载失败。');
+    }
+  };
+
+  const handleFileUnavailable = () => {
+    setNotice('文件上传需要后端对象存储接口。本轮先支持文本指令和素材 URL 登记。');
+  };
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
     await runAgent(inputValue);
@@ -741,6 +843,56 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       nodeId: selectedNode.id,
     });
   };
+
+  useEffect(() => {
+    const handleNodeAction = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        action: string;
+        nodeId: string;
+        title?: string;
+        prompt?: string;
+        url?: string;
+      }>).detail;
+      if (!detail?.nodeId) return;
+
+      if (detail.action === 'delete') {
+        void deleteNodePersistently(detail.nodeId);
+        return;
+      }
+
+      if (detail.action === 'quote') {
+        setInputValue(detail.prompt || `引用节点：${detail.title || detail.nodeId}`);
+        setNotice('节点内容已放入输入框，可继续编辑后发送。');
+        return;
+      }
+
+      if (detail.action === 'regenerate') {
+        void runAgent(detail.prompt || `重新生成 ${detail.title || '当前节点'}`, {
+          mode: 'regenerate-node',
+          nodeId: detail.nodeId,
+        });
+        return;
+      }
+
+      if (detail.action === 'image-to-video') {
+        void runAgent(detail.prompt || `基于节点 ${detail.title || detail.nodeId} 生成视频`, {
+          mode: 'regenerate-node',
+          nodeId: detail.nodeId,
+        });
+        return;
+      }
+
+      if (detail.action === 'download' && detail.url) {
+        window.open(detail.url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      setNotice('该节点操作需要后端能力补齐，当前版本暂不可用。');
+    };
+
+    window.addEventListener('wandou:canvas-node-action', handleNodeAction);
+    return () => window.removeEventListener('wandou:canvas-node-action', handleNodeAction);
+  }, [deleteNodePersistently, runAgent]);
 
   useEffect(() => {
     const prompt = initialPrompt?.trim();
@@ -774,16 +926,16 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
              </div>
              
              {/* Tasks */}
-             <button className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="任务">
+             <button onClick={() => setNotice(tasks.length > 0 ? '点击后台任务队列中的条目可查看详情。' : '当前暂无后台任务。')} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="任务">
                <Video size={18} />
                <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full border border-[#121213]"></span>
              </button>
 
              {/* Share */}
-             <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="分享" aria-label="分享">
+             <button onClick={() => setNotice('分享链接需要项目权限和公开访问策略，当前版本暂未开放。')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="分享" aria-label="分享">
                 <Share2 size={14} className="opacity-80" />
              </button>
-             <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors" title="导出项目" aria-label="导出项目">
+             <button onClick={() => setNotice('项目导出会在成片和资产清单格式确定后接入，当前可在素材库查看生成资产。')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors" title="导出项目" aria-label="导出项目">
                 <Play size={14} className="fill-white" />
              </button>
           </div>
@@ -805,7 +957,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               {tasks.length === 0 ? (
                 <div className="text-[11px] text-slate-500">暂无后台任务</div>
               ) : tasks.slice(0, 3).map((task) => (
-                <div key={task.id} className="space-y-1.5">
+                <button key={task.id} onClick={() => handleOpenTask(task.id)} className="block w-full space-y-1.5 rounded-lg p-1 text-left transition-colors hover:bg-white/5">
                   <div className="flex items-center justify-between text-[11px]">
                     <div className="flex items-center space-x-2 text-slate-400 min-w-0">
                       <div className={`w-1.5 h-1.5 rounded-full ${
@@ -822,7 +974,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                   <div className="w-full h-1 bg-[#0B0B0C] rounded-full overflow-hidden">
                     <div className="h-full bg-brand rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all" style={{ width: `${task.progress}%` }}></div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -833,17 +985,31 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
           )}
 
+          {notice && (
+            <div className="rounded-xl border border-brand/25 bg-brand/10 p-3 text-[12px] text-brand">
+              <div className="flex items-center justify-between gap-3">
+                <span>{notice}</span>
+                <button onClick={() => setNotice(null)} className="text-[11px] font-semibold text-slate-300 hover:text-white">关闭</button>
+              </div>
+            </div>
+          )}
+
           {(activeRunId || confirmation || runStatus !== 'idle') && (
             <div className="rounded-xl border border-white/10 bg-[#1A1A1C] p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">AgentScope Run</div>
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">AgentScope Run</div>
                   <div className="mt-1 truncate text-[13px] font-semibold text-slate-200">
                     {runStatusText}
                   </div>
                 </div>
                 <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400">{runStatus}</span>
               </div>
+              {activeRunId && (
+                <button onClick={handleOpenRunDetail} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-semibold text-slate-300 hover:bg-white/10">
+                  查看 Run 事件详情
+                </button>
+              )}
 
               {confirmation && (
                 <div className="space-y-3 rounded-lg border border-brand/30 bg-brand/10 p-3 text-[12px] leading-5">
@@ -968,11 +1134,10 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
             )}
             <div className="flex items-center px-4 py-2 rounded-2xl bg-[#1A1A1C] border border-white/5 focus-within:border-white/20 transition-colors group relative">
-              <button className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-1 relative">
+              <button onClick={handleFileUnavailable} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-1 relative" title="上传附件">
                 <Paperclip size={16} />
-                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" />
               </button>
-              <button className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-2" title="引用画布内容">
+              <button onClick={() => setNotice('请选择画布节点后使用节点卡片或右侧配置中的引用/重跑能力。')} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer mr-2" title="引用画布内容">
                 <CopyPlus size={16} />
               </button>
               <input 
@@ -1035,6 +1200,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onNodesDelete={handleNodesDelete}
+                    onEdgesDelete={handleEdgesDelete}
                     onNodeClick={handleNodeClick}
                     onNodeDragStop={handleNodeDragStop}
                     onPaneClick={handlePaneClick}
@@ -1088,26 +1255,26 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                  <div>
                     <h3 className="text-xs font-bold text-slate-400 mb-3">生成模型 Engine</h3>
                     <div className="grid grid-cols-2 gap-2">
-                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">Sora</button>
-                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">Kling</button>
+                       <button onClick={() => setNotice('模型选择参数入参化将在下一阶段接入，当前重跑使用后端模型路由。')} className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">Sora</button>
+                       <button onClick={() => setNotice('模型选择参数入参化将在下一阶段接入，当前重跑使用后端模型路由。')} className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">Kling</button>
                     </div>
                  </div>
                  
                  <div>
                     <h3 className="text-xs font-bold text-slate-400 mb-3">画面比例 Aspect Ratio</h3>
                     <div className="grid grid-cols-3 gap-2">
-                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">16:9</button>
-                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">9:16</button>
-                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">1:1</button>
+                       <button onClick={() => setNotice('画面比例已由项目创建时保存，节点级比例参数将在后续接入。')} className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">16:9</button>
+                       <button onClick={() => setNotice('节点级比例参数将在后续接入。')} className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">9:16</button>
+                       <button onClick={() => setNotice('节点级比例参数将在后续接入。')} className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">1:1</button>
                     </div>
                  </div>
 
                  <div>
                     <h3 className="text-xs font-bold text-slate-400 mb-3">时长 Duration</h3>
                     <div className="grid grid-cols-3 gap-2">
-                       <button className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">4s</button>
-                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">8s</button>
-                       <button className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">10s</button>
+                       <button onClick={() => setNotice('时长参数将在节点重跑请求扩展后接入。')} className="py-2 bg-brand/20 border border-brand/50 rounded-lg text-[11px] text-brand font-medium">4s</button>
+                       <button onClick={() => setNotice('时长参数将在节点重跑请求扩展后接入。')} className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">8s</button>
+                       <button onClick={() => setNotice('时长参数将在节点重跑请求扩展后接入。')} className="py-2 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400 hover:bg-white/10 transition-colors">10s</button>
                     </div>
                  </div>
 
@@ -1127,7 +1294,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     <h3 className="text-xs font-bold text-slate-400 mb-2">随机种子 Seed</h3>
                     <div className="flex items-center space-x-2">
                        <input type="text" className="flex-1 bg-[#1A1A1C] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" value="-1" readOnly />
-                       <button className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 rounded-lg transition-colors"><RefreshCw size={14} /></button>
+                       <button onClick={() => setNotice('随机种子将在生成参数入参化后接入。')} className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 rounded-lg transition-colors"><RefreshCw size={14} /></button>
                     </div>
                  </div>
 
@@ -1165,17 +1332,17 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           {/* Floater Controls (Inside Canvas) */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 hidden lg:flex items-center space-x-2 z-20">
                <div className="bg-[#1A1A1C] h-10 flex items-center px-1 rounded-xl shadow-xl border border-white/5">
-                 <button className="p-2 text-slate-400 hover:text-white transition-colors"><MessageSquare size={16} /></button>
-                 <button className="p-2 text-slate-400 hover:text-white transition-colors"><MousePointer2 size={16} /></button>
-                 <button className="p-2 text-slate-400 hover:text-white transition-colors"><Wand2 size={16} /></button>
+                 <button onClick={() => setNotice('对话模式已在左侧输入框中可用。')} className="p-2 text-slate-400 hover:text-white transition-colors"><MessageSquare size={16} /></button>
+                 <button onClick={() => setNotice('选择模式已启用：点击画布节点即可查看配置。')} className="p-2 text-slate-400 hover:text-white transition-colors"><MousePointer2 size={16} /></button>
+                 <button onClick={() => setNotice('魔法工具会在批量节点操作接入后开放。')} className="p-2 text-slate-400 hover:text-white transition-colors"><Wand2 size={16} /></button>
                  <div className="w-px h-4 bg-white/10 mx-1" />
-                 <button className="p-2 text-slate-400 hover:text-white transition-colors"><Plus size={16} /></button>
+                 <button onClick={() => setNotice('手动新增节点需要画布节点创建接口，当前由 Agent Run 自动创建。')} className="p-2 text-slate-400 hover:text-white transition-colors"><Plus size={16} /></button>
                </div>
             </div>
 
             <div className="absolute bottom-4 left-4 right-4 z-30 lg:hidden">
               <div className="flex items-center rounded-2xl border border-white/10 bg-[#121213]/95 px-3 py-2 shadow-2xl backdrop-blur">
-                <button className="p-1.5 text-slate-500">
+                <button onClick={handleFileUnavailable} className="p-1.5 text-slate-500">
                   <Paperclip size={16} />
                 </button>
                 <input
@@ -1203,6 +1370,82 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
 
           </div>
+      {(selectedTaskDetail || runDetail) && (
+        <div className="fixed inset-y-0 right-0 z-50 w-[380px] border-l border-white/10 bg-[#121213] p-6 text-slate-200 shadow-2xl">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white">{selectedTaskDetail ? '任务详情' : 'Run 详情'}</h2>
+            <button
+              onClick={() => {
+                setSelectedTaskDetail(null);
+                setRunDetail(null);
+              }}
+              className="text-slate-500 hover:text-white"
+              aria-label="关闭详情"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {selectedTaskDetail && (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="text-xs text-slate-500">状态</div>
+                <div className="mt-1 font-semibold text-slate-100">{selectedTaskDetail.status}</div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/40">
+                  <div className="h-full rounded-full bg-brand" style={{ width: `${selectedTaskDetail.progress}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">消息</div>
+                <div className="mt-1 text-slate-300">{selectedTaskDetail.message}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-lg bg-black/20 p-3">
+                  <div className="text-slate-500">类型</div>
+                  <div className="mt-1 text-slate-300">{selectedTaskDetail.type}</div>
+                </div>
+                <div className="rounded-lg bg-black/20 p-3">
+                  <div className="text-slate-500">节点</div>
+                  <div className="mt-1 break-all text-slate-300">{selectedTaskDetail.nodeId}</div>
+                </div>
+              </div>
+              <pre className="max-h-56 overflow-auto rounded-xl border border-white/10 bg-[#0B0B0C] p-3 text-[11px] leading-5 text-slate-400">
+                {JSON.stringify(selectedTaskDetail, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {runDetail && (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="text-xs text-slate-500">状态</div>
+                <div className="mt-1 font-semibold text-slate-100">{runDetail.status}</div>
+                {runDetail.error && <div className="mt-2 text-xs text-red-200">{runDetail.error}</div>}
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">指令</div>
+                <div className="mt-1 text-slate-300">{runDetail.message}</div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs text-slate-500">事件</div>
+                <div className="max-h-[56vh] space-y-2 overflow-auto pr-1">
+                  {(runDetail.events || []).map((event: SseEvent<any>) => (
+                    <div key={event.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-semibold text-brand">{event.event}</span>
+                        <span className="text-slate-500">{new Date(event.createdAt).toLocaleTimeString()}</span>
+                      </div>
+                      <pre className="mt-2 max-h-28 overflow-auto text-[10px] leading-4 text-slate-400">
+                        {JSON.stringify(event.data, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

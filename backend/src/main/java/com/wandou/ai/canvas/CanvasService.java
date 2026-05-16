@@ -136,6 +136,29 @@ public class CanvasService {
         }
     }
 
+    public void deleteNode(String canvasId, String nodeId) {
+        MutableCanvas canvas = requireCanvas(canvasId);
+        synchronized (canvas) {
+            boolean removed = canvas.nodes.removeIf(node -> node.id().equals(nodeId));
+            if (!removed) {
+                throw new IllegalArgumentException("canvas node not found: " + nodeId);
+            }
+            canvas.edges.removeIf(edge -> edge.source().equals(nodeId) || edge.target().equals(nodeId));
+            canvas.updatedAt = Instant.now();
+        }
+    }
+
+    public void deleteEdge(String canvasId, String edgeId) {
+        MutableCanvas canvas = requireCanvas(canvasId);
+        synchronized (canvas) {
+            boolean removed = canvas.edges.removeIf(edge -> edge.id().equals(edgeId));
+            if (!removed) {
+                throw new IllegalArgumentException("canvas edge not found: " + edgeId);
+            }
+            canvas.updatedAt = Instant.now();
+        }
+    }
+
     private MutableCanvas requireCanvas(String canvasId) {
         MutableCanvas canvas = canvases.get(canvasId);
         if (canvas == null) {

@@ -11,6 +11,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -60,7 +62,7 @@ class AppCapabilitiesIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.position.x").value(220));
 
-        mockMvc.perform(post("/api/canvas/{canvasId}/edges", canvasId)
+        String edgeJson = mockMvc.perform(post("/api/canvas/{canvasId}/edges", canvasId)
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -68,7 +70,31 @@ class AppCapabilitiesIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.source").value("script-1"))
-                .andExpect(jsonPath("$.data.target").value("img-1"));
+                .andExpect(jsonPath("$.data.target").value("img-1"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String edgeId = objectMapper.readTree(edgeJson).path("data").path("id").asText();
+
+        mockMvc.perform(delete("/api/canvas/{canvasId}/edges/{edgeId}", canvasId, edgeId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        mockMvc.perform(get("/api/canvas/{canvasId}", canvasId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.edges[*].id", not(hasItem(edgeId))));
+
+        mockMvc.perform(delete("/api/canvas/{canvasId}/nodes/{nodeId}", canvasId, "script-1")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        mockMvc.perform(get("/api/canvas/{canvasId}", canvasId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nodes[*].id", not(hasItem("script-1"))));
 
         mockMvc.perform(post("/api/assets")
                         .header("Authorization", "Bearer " + token)

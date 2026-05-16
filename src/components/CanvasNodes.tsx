@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, Position, useReactFlow } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import { Wand2, Trash2, Maximize2, Play, CopyPlus, RefreshCw, Download, Video, Layers, Image as ImageIcon, Music, Clapperboard, CheckCircle2 } from 'lucide-react';
 import { getAuthToken } from '../lib/api';
 
@@ -24,7 +24,7 @@ const getImageUrls = (...values: unknown[]) => values
     }
     return '';
   })
-  .filter(Boolean);
+  .filter((url) => url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/api/'));
 
 const withAuthQuery = (url: string) => {
   if (!url || !url.startsWith('/api/')) return url;
@@ -41,8 +41,20 @@ const EmptyState = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
+const emitNodeAction = (action: string, nodeId: string, data: any, extra: Record<string, unknown> = {}) => {
+  const output = data?.output || {};
+  window.dispatchEvent(new CustomEvent('wandou:canvas-node-action', {
+    detail: {
+      action,
+      nodeId,
+      title: data?.title,
+      prompt: getString(output.prompt, output.summary, output.content),
+      ...extra,
+    },
+  }));
+};
+
 export const ScriptNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || '智能剧本生成';
   const status = data?.status || 'idle';
   const summary = data?.output?.summary || '等待 Agent Run 生成剧本摘要。';
@@ -54,6 +66,7 @@ export const ScriptNode = ({ id, data }: any) => {
       ? '模板 fallback'
       : '等待生成';
   const entities = toArray(data?.output?.characters || data?.output?.roles || data?.output?.entities || data?.output?.scenes).slice(0, 4);
+  const beats = toArray(data?.output?.beats).slice(0, 4);
   
   return (
     <div className="w-[340px] bg-[#111112] rounded-2xl border border-white/10 shadow-2xl overflow-hidden group">
@@ -66,10 +79,10 @@ export const ScriptNode = ({ id, data }: any) => {
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
+          <button onClick={() => emitNodeAction('quote', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
             <CopyPlus size={14} />
           </button>
-          <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors">
+          <button onClick={() => emitNodeAction('delete', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors">
             <Trash2 size={14} />
           </button>
         </div>
@@ -103,6 +116,14 @@ export const ScriptNode = ({ id, data }: any) => {
                 </div>
               ))}
             </div>
+          ) : beats.length > 0 ? (
+            <div className="space-y-2">
+              {beats.map((beat: any, index) => (
+                <div key={`${id}-beat-${index}`} className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3 text-[12px] leading-5 text-slate-300">
+                  <span className="mr-2 text-brand">#{index + 1}</span>{String(beat)}
+                </div>
+              ))}
+            </div>
           ) : (
             <EmptyState>后端暂未返回角色或场景提取结果。</EmptyState>
           )}
@@ -114,7 +135,6 @@ export const ScriptNode = ({ id, data }: any) => {
 };
 
 export const CharacterNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || '角色一致性生成 (Character Design)';
   const status = data?.status || 'idle';
   const characters = Array.isArray(data?.output?.characters) ? data.output.characters : [];
@@ -132,10 +152,10 @@ export const CharacterNode = ({ id, data }: any) => {
           <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-slate-400">LoRA 模型应用</span>
         </div>
         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
+          <button onClick={() => emitNodeAction('quote', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-brand transition-colors" title="引入到对话">
             <CopyPlus size={14} />
           </button>
-          <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors">
+          <button onClick={() => emitNodeAction('delete', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors">
             <Trash2 size={14} />
           </button>
         </div>
@@ -147,7 +167,7 @@ export const CharacterNode = ({ id, data }: any) => {
               <div key={character.id || character.name || characterIndex} className="space-y-4">
                 <div className="flex items-baseline justify-between gap-3">
                     <h4 className="min-w-0 truncate text-[13px] font-bold text-slate-200">角色{characterIndex + 1}: {getString(character.name, character.title, '未命名角色')}</h4>
-                    <button className="shrink-0 text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
+                    <button onClick={() => emitNodeAction('regenerate', id, data, { prompt: getString(character.prompt, character.description, data?.output?.summary) })} className="shrink-0 text-[11px] text-brand hover:text-brand/80 flex items-center space-x-1"><RefreshCw size={10} /><span>重新生成</span></button>
                 </div>
                 <p className="text-[11px] text-slate-400 line-clamp-3 bg-[#1A1A1C] p-2 rounded-lg border border-white/5">Prompt: {getString(character.prompt, character.description, '后端暂未返回角色提示词。')}</p>
                 {images.length > 0 ? (
@@ -157,11 +177,11 @@ export const CharacterNode = ({ id, data }: any) => {
                         <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt={getString(character.name, 'Character asset')} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-between p-1.5 transition-opacity">
                           <div className="flex justify-end">
-                            <button className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="高清看图">
+                            <button onClick={() => emitNodeAction('download', id, data, { url: imageUrl })} className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="高清看图">
                               <Maximize2 size={12} />
                             </button>
                           </div>
-                          <button className="w-full py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[6px] text-[10px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
+                          <button onClick={() => emitNodeAction('image-to-video', id, data, { prompt: getString(character.prompt, character.description, `基于角色 ${character.name || ''} 生成视频`) })} className="w-full py-1.5 bg-brand/90 hover:bg-brand text-white rounded-[6px] text-[10px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
                             <Video size={10} />
                             <span>生成视频</span>
                           </button>
@@ -184,7 +204,6 @@ export const CharacterNode = ({ id, data }: any) => {
 };
 
 export const StoryboardNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || '分镜设计';
   const status = data?.status || 'idle';
   const scenes = Array.isArray(data?.output?.scenes) ? data.output.scenes : [];
@@ -200,7 +219,7 @@ export const StoryboardNode = ({ id, data }: any) => {
           <span className="text-xs font-bold text-slate-300">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${status === 'success' ? 'text-brand border-brand/30 bg-brand/10' : status === 'running' ? 'text-yellow-300 border-yellow-300/20 bg-yellow-300/10' : 'text-slate-500 border-white/10 bg-white/5'}`}>{status}</span>
         </div>
-        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+        <button onClick={() => emitNodeAction('delete', id, data)} className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
           <Trash2 size={14} />
         </button>
       </div>
@@ -222,9 +241,10 @@ export const StoryboardNode = ({ id, data }: any) => {
 };
 
 export const ImagesNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || (data?.imageSrc ? '生成分镜视频' : '场景概念图生成');
   const status = data?.status || 'idle';
+  const prompt = getString(data?.output?.prompt, data?.output?.summary);
+  const imageError = getString(data?.output?.imageGenerationError);
   const videoUrl = withAuthQuery(getString(data?.output?.url, data?.output?.videoUrl));
   const thumbnailSrc = withAuthQuery(getString(data?.imageSrc, data?.output?.thumbnailUrl));
   const imageSrc = thumbnailSrc;
@@ -241,17 +261,17 @@ export const ImagesNode = ({ id, data }: any) => {
         
         {/* Node Toolbar on hover */}
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1A1A1C] border border-white/10 p-1.5 rounded-xl shadow-xl z-50">
-          <button className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors text-[11px] whitespace-nowrap">
+          <button onClick={() => emitNodeAction('regenerate', id, data)} className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors text-[11px] whitespace-nowrap">
             <RefreshCw size={12} />
             <span>重摇 (Regen)</span>
           </button>
           <div className="w-px h-3 bg-white/10 mx-1" />
-          <button className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors text-[11px] whitespace-nowrap">
+          <button onClick={() => emitNodeAction('download', id, data, { url: videoUrl || imageSrc })} className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors text-[11px] whitespace-nowrap">
             <Download size={12} />
             <span>导出高画质</span>
           </button>
           <div className="w-px h-3 bg-white/10 mx-1" />
-          <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors">
+          <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors">
             <Trash2 size={12} />
           </button>
         </div>
@@ -281,7 +301,7 @@ export const ImagesNode = ({ id, data }: any) => {
                )}
                <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center opacity-0 group-hover/video:opacity-100 transition-opacity">
                   <span className="px-2 py-1 bg-black/70 backdrop-blur-md rounded-[6px] text-[10px] text-white font-medium">{getString(data?.output?.duration, '预览')}</span>
-                  <button className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip">
+                  <button onClick={() => emitNodeAction('download', id, data, { url: videoUrl || imageSrc })} className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip">
                      <Maximize2 size={12} />
                   </button>
                </div>
@@ -301,12 +321,12 @@ export const ImagesNode = ({ id, data }: any) => {
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-brand border-none" />
       
       <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1A1A1C] border border-white/10 p-1.5 rounded-xl shadow-xl z-50">
-        <button className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-brand transition-colors text-[11px] whitespace-nowrap">
+        <button onClick={() => emitNodeAction('unavailable', id, data)} className="px-2 py-1 flex items-center space-x-1 hover:bg-white/10 rounded text-slate-300 hover:text-brand transition-colors text-[11px] whitespace-nowrap">
            <Layers size={12} />
            <span>批量操作</span>
         </button>
         <div className="w-px h-3 bg-white/10 mx-1" />
-        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors">
+        <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors">
           <Trash2 size={12} />
         </button>
       </div>
@@ -326,18 +346,18 @@ export const ImagesNode = ({ id, data }: any) => {
               <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover/inner:scale-110" alt="Generated asset" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent opacity-0 group-hover/inner:opacity-100 transition-opacity flex flex-col justify-between p-1.5">
                 <div className="flex justify-end">
-                   <button className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="高清大图">
+                   <button onClick={() => emitNodeAction('download', id, data, { url })} className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="高清大图">
                       <Maximize2 size={12} />
                    </button>
                 </div>
                 <div className="flex flex-col space-y-1.5">
-                   <button className="w-full py-1.5 bg-brand hover:bg-brand/90 text-white rounded-[8px] text-[11px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
+                   <button onClick={() => emitNodeAction('image-to-video', id, data, { prompt: prompt || '基于当前图片生成视频' })} className="w-full py-1.5 bg-brand hover:bg-brand/90 text-white rounded-[8px] text-[11px] font-medium transition-colors flex items-center justify-center space-x-1 shadow-lg">
                       <Video size={12} />
                       <span>图生视频 (Animate)</span>
                    </button>
                    <div className="flex space-x-1.5">
-                      <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
-                      <button className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors flex items-center justify-center">
+                      <button onClick={() => emitNodeAction('unavailable', id, data)} className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors">变体</button>
+                      <button onClick={() => emitNodeAction('download', id, data, { url })} className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-[8px] text-[10px] font-medium transition-colors flex items-center justify-center">
                         <Download size={10} />
                       </button>
                    </div>
@@ -346,14 +366,22 @@ export const ImagesNode = ({ id, data }: any) => {
             </div>
           ))}
         </div>
-      ) : <EmptyState>等待后端返回图像结果。</EmptyState>}
+      ) : (
+        <div className="space-y-3">
+          {prompt && (
+            <div className="rounded-xl border border-white/5 bg-[#1A1A1C] p-3 text-[12px] leading-5 text-slate-300">
+              {prompt}
+            </div>
+          )}
+          <EmptyState>{imageError || '等待后端返回图像结果。'}</EmptyState>
+        </div>
+      )}
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-brand border-none" />
     </div>
   );
 };
 
 export const AudioNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || '生成音效配乐';
   const status = data?.status || 'idle';
   const prompt = getString(data?.output?.prompt, data?.output?.summary);
@@ -372,7 +400,7 @@ export const AudioNode = ({ id, data }: any) => {
           <span className="text-xs font-bold text-slate-200">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : status === 'running' ? 'text-yellow-300 bg-yellow-300/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
         </div>
-        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-white/10 rounded text-slate-400 transition-colors">
+        <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 transition-colors">
           <Trash2 size={12} />
         </button>
       </div>
@@ -398,10 +426,10 @@ export const AudioNode = ({ id, data }: any) => {
 };
 
 export const FinalVideoNode = ({ id, data }: any) => {
-  const { setNodes } = useReactFlow();
   const title = data?.title || '成片合成';
   const status = data?.status || 'idle';
   const thumbnail = getString(data?.output?.thumbnailUrl, data?.output?.imageUrl);
+  const videoUrl = withAuthQuery(getString(data?.output?.url, data?.output?.videoUrl));
 
   return (
     <div className="w-[340px] bg-[#111112] rounded-2xl border border-brand/30 shadow-[0_0_36px_rgba(16,185,129,0.12)] overflow-hidden group">
@@ -414,7 +442,7 @@ export const FinalVideoNode = ({ id, data }: any) => {
           <span className="text-xs font-bold text-slate-300">{title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${status === 'success' ? 'text-brand bg-brand/10' : 'text-slate-500 bg-white/5'}`}>{status}</span>
         </div>
-        <button onClick={() => setNodes(nds => nds.filter(n => n.id !== id))} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => emitNodeAction('delete', id, data)} className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
           <Trash2 size={12} />
         </button>
       </div>
@@ -422,12 +450,18 @@ export const FinalVideoNode = ({ id, data }: any) => {
         <div className="aspect-video overflow-hidden rounded-xl border border-white/5 bg-slate-900 relative">
           {thumbnail ? (
             <>
-              <img src={thumbnail} className="h-full w-full object-cover" alt="Final video" />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                <div className="w-12 h-12 rounded-full bg-brand/90 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-                  <Play size={22} className="fill-white text-white ml-1" />
+              {videoUrl ? (
+                <video src={videoUrl} poster={withAuthQuery(thumbnail)} controls preload="metadata" className="h-full w-full object-cover" />
+              ) : (
+                <div className="relative h-full w-full">
+                  <img src={withAuthQuery(thumbnail)} className="h-full w-full object-cover" alt="Final video" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                    <div className="w-12 h-12 rounded-full bg-brand/90 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                      <Play size={22} className="fill-white text-white ml-1" />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           ) : (
             <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-slate-500">

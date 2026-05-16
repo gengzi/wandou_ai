@@ -46,6 +46,8 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
   const [prompt, setPrompt] = useState('');
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [notice, setNotice] = useState('');
+  const [showAllProjects, setShowAllProjects] = useState(false);
 
   useEffect(() => {
     listProjects()
@@ -55,13 +57,13 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
   }, []);
 
   const recentProjects = useMemo(() => {
-    return projects.slice(0, 4).map((project) => ({
+    return projects.slice(0, showAllProjects ? projects.length : 4).map((project) => ({
       id: project.id,
       title: project.name,
       time: new Date(project.createdAt).toLocaleString(),
       status: project.aspectRatio,
     }));
-  }, [projects]);
+  }, [projects, showAllProjects]);
 
   const submit = () => {
     onNavigate(prompt);
@@ -85,14 +87,23 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
         </button>
 
         <div className="flex items-center gap-3">
-          <button className="rounded-xl bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/10">
+          <button
+            onClick={() => setNotice('当前版本仅提供简体中文界面，多语言切换将在后续版本接入。')}
+            className="rounded-xl bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/10"
+          >
             简体中文
           </button>
-          <button className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10">
+          <button
+            onClick={() => setNotice('常见问题中心尚未接入。当前可以直接从首页输入创作指令开始验证链路。')}
+            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-white/10"
+          >
             <BadgeHelp size={16} />
             常见问题
           </button>
-          <button className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:bg-brand/90">
+          <button
+            onClick={() => setNotice('加入已有项目需要邀请码/协作入口，当前请从最近项目列表打开已有项目。')}
+            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:bg-brand/90"
+          >
             <MessageSquareText size={16} />
             加入创作项目
           </button>
@@ -105,6 +116,14 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
       </header>
 
       <main className="mx-auto max-w-[1480px] px-10 pb-20">
+        {notice && (
+          <div className="mx-auto mt-2 max-w-[860px] rounded-xl border border-brand/25 bg-brand/10 px-4 py-3 text-sm text-brand">
+            <div className="flex items-center justify-between gap-4">
+              <span>{notice}</span>
+              <button onClick={() => setNotice('')} className="text-xs font-semibold text-slate-300 hover:text-white">关闭</button>
+            </div>
+          </div>
+        )}
         <section className="relative flex min-h-[390px] flex-col items-center justify-center pt-8">
           <div className="pointer-events-none absolute inset-x-16 top-12 h-56 rounded-full bg-brand/10 blur-[90px]" />
           <motion.div
@@ -133,14 +152,24 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
 
               <div className="mt-5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/15">
+                  <button
+                    onClick={() => setNotice('附件上传需要后端对象存储接口，当前请用文本描述参考图或在素材库登记外链。')}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-slate-300 hover:bg-white/15"
+                    aria-label="添加附件"
+                  >
                     <Plus size={19} />
                   </button>
-                  <button className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15">
+                  <button
+                    onClick={() => setNotice('参考图上传尚未接入，当前可以在提示词中描述参考图，或到素材管理登记图片 URL。')}
+                    className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15"
+                  >
                     <ImagePlus size={16} />
                     参考图
                   </button>
-                  <button className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15">
+                  <button
+                    onClick={() => onNavigate(prompt.trim() ? `剧本：${prompt.trim()}` : '剧本')}
+                    className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/15"
+                  >
                     <Wand2 size={16} />
                     剧本
                   </button>
@@ -184,8 +213,11 @@ export default function HomeView({ onNavigate }: HomeViewProps) {
               <button onClick={() => onNavigate()} className="rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
                 + 新建项目
               </button>
-              <button className="flex items-center gap-1 rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
-                查看全部
+              <button
+                onClick={() => setShowAllProjects((value) => !value)}
+                className="flex items-center gap-1 rounded-full bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10"
+              >
+                {showAllProjects ? '收起' : '查看全部'}
                 <ChevronRight size={15} />
               </button>
             </div>

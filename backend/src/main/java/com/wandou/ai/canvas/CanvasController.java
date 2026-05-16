@@ -8,6 +8,7 @@ import com.wandou.ai.canvas.dto.CanvasNodeResponse;
 import com.wandou.ai.canvas.dto.CanvasResponse;
 import com.wandou.ai.common.ApiResponse;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,5 +52,19 @@ public class CanvasController {
             @Valid @RequestBody CanvasEdgeCreateRequest request
     ) {
         return ApiResponse.ok(canvasService.addEdge(canvasId, request.source(), request.target()));
+    }
+
+    @DeleteMapping("/{canvasId}/nodes/{nodeId}")
+    @SaCheckPermission("canvas:write")
+    public ApiResponse<Void> deleteNode(@PathVariable String canvasId, @PathVariable String nodeId) {
+        canvasService.deleteNode(canvasId, nodeId);
+        return ApiResponse.ok(null);
+    }
+
+    @DeleteMapping("/{canvasId}/edges/{edgeId}")
+    @SaCheckPermission("canvas:write")
+    public ApiResponse<Void> deleteEdge(@PathVariable String canvasId, @PathVariable String edgeId) {
+        canvasService.deleteEdge(canvasId, edgeId);
+        return ApiResponse.ok(null);
     }
 }

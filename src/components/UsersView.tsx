@@ -1,10 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, UserPlus, MoreHorizontal, ShieldCheck, Mail, Activity, Package } from 'lucide-react';
+import { Search, Filter, UserPlus, MoreHorizontal, ShieldCheck, Mail, Activity, Package, X } from 'lucide-react';
 import { inviteUser, listUsers, UserResponse } from '../lib/api';
 
 export default function UsersView() {
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    role: 'viewer',
+  });
 
   useEffect(() => {
     listUsers()
@@ -23,16 +34,37 @@ export default function UsersView() {
     return user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '从未登录';
   };
 
-  const handleInvite = async () => {
-    const email = window.prompt('请输入成员邮箱');
-    if (!email) return;
-    const name = window.prompt('请输入成员姓名', email.split('@')[0]) || email.split('@')[0];
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const matchesQuery = `${user.name} ${user.email}`.toLowerCase().includes(query.trim().toLowerCase());
+      const matchesRole = roleFilter === 'all' || user.roles.includes(roleFilter);
+      const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+      return matchesQuery && matchesRole && matchesStatus;
+    });
+  }, [query, roleFilter, statusFilter, users]);
+
+  const handleInvite = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!inviteForm.email.trim() || !inviteForm.name.trim()) {
+      setError('请填写成员姓名和邮箱。');
+      return;
+    }
+    setSaving(true);
     setError(null);
     try {
-      const user = await inviteUser({ name, email, role: 'viewer' });
+      const user = await inviteUser({
+        name: inviteForm.name.trim(),
+        email: inviteForm.email.trim(),
+        role: inviteForm.role,
+      });
       setUsers((current) => [user, ...current.filter((item) => item.id !== user.id)]);
+      setInviteForm({ name: '', email: '', role: 'viewer' });
+      setShowInviteForm(false);
+      setNotice('成员已邀请。');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '邀请失败');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -43,7 +75,7 @@ export default function UsersView() {
           <h1 className="text-2xl font-bold text-white mb-1">用户管理 (Users Directory)</h1>
           <p className="text-sm text-slate-400">管理团队成员、权限分配及订阅计划</p>
         </div>
-        <button onClick={handleInvite} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
+        <button onClick={() => setShowInviteForm(true)} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
           <UserPlus size={16} />
           <span>邀请成员</span>
         </button>
@@ -73,14 +105,51 @@ export default function UsersView() {
         <div className="flex space-x-3">
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand transition-colors" size={16} />
-            <input type="text" placeholder="搜索邮箱或名称..." className="w-64 bg-[#1A1A1C] border border-white/5 focus:border-brand/50 rounded-lg pl-9 pr-4 py-2 outline-none text-sm transition-all" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索邮箱或名称..." className="w-64 bg-[#1A1A1C] border border-white/5 focus:border-brand/50 rounded-lg pl-9 pr-4 py-2 outline-none text-sm transition-all" />
           </div>
-          <button className="px-3 py-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-300 text-sm flex items-center space-x-2 transition-colors">
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50">
+            <option value="all">全部角色</option>
+            <option value="admin">Admin</option>
+            <option value="editor">Editor</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50">
+            <option value="all">全部状态</option>
+            <option value="active">active</option>
+            <option value="disabled">disabled</option>
+          </select>
+          <button onClick={() => setNotice('高级筛选、角色修改和禁用操作需要后端用户管理接口，当前支持本地筛选。')} className="px-3 py-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-300 text-sm flex items-center space-x-2 transition-colors">
             <Filter size={16} />
             <span>筛选</span>
           </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand/25 bg-brand/10 px-4 py-3 text-sm text-brand">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="text-xs font-semibold text-slate-300 hover:text-white">关闭</button>
+        </div>
+      )}
+
+      {showInviteForm && (
+        <form onSubmit={handleInvite} className="mb-5 rounded-xl border border-white/10 bg-[#121213] p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white">邀请成员</h2>
+            <button type="button" onClick={() => setShowInviteForm(false)} className="text-slate-500 hover:text-white"><X size={16} /></button>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-4">
+            <input value={inviteForm.email} onChange={(event) => setInviteForm({ ...inviteForm, email: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="邮箱" />
+            <input value={inviteForm.name} onChange={(event) => setInviteForm({ ...inviteForm, name: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="姓名" />
+            <select value={inviteForm.role} onChange={(event) => setInviteForm({ ...inviteForm, role: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">{saving ? '邀请中...' : '发送邀请'}</button>
+          </div>
+        </form>
+      )}
 
       <div className="flex-1 bg-[#121213] border border-white/5 rounded-2xl overflow-hidden">
         {error && (
@@ -100,7 +169,7 @@ export default function UsersView() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
+            {filteredUsers.map((user) => (
               <tr key={user.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-3">
@@ -132,12 +201,19 @@ export default function UsersView() {
                 </td>
                 <td className="px-6 py-4 text-sm text-slate-400">{activityLabel(user)}</td>
                 <td className="px-6 py-4">
-                  <button className="p-2 hover:bg-white/10 rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 transition-all">
+                  <button onClick={() => setNotice('角色修改、禁用和删除成员需要后端用户管理接口。')} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 transition-all">
                     <MoreHorizontal size={16} />
                   </button>
                 </td>
               </tr>
             ))}
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-500">
+                  没有匹配当前搜索和筛选条件的成员。
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

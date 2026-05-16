@@ -120,10 +120,13 @@ export default function ModelSettingsView() {
           <div>
             <div className="mb-2 text-xs font-bold uppercase tracking-[0.24em] text-brand">Model Settings</div>
             <h1 className="text-2xl font-bold text-white">模型配置</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              每个用户维护自己的模型接入。优先使用 OpenAI-compatible 的 Base URL、API Key、模型名三件套，后续接 OpenAI、兼容网关或第三方适配器都走同一套配置。
-            </p>
-          </div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            每个用户维护自己的模型接入。优先使用 OpenAI-compatible 的 Base URL、API Key、模型名三件套，后续接 OpenAI、兼容网关或第三方适配器都走同一套配置。
+          </p>
+          <p className="mt-2 text-xs text-yellow-200/80">
+            当前版本只保存配置，不执行连接测试；保存后请通过工作区生成链路验证模型可用性。
+          </p>
+        </div>
           <button
             type="button"
             onClick={() => resetForm('text')}

@@ -327,12 +327,24 @@ export async function createCanvasEdge(canvasId: string, payload: { source: stri
   });
 }
 
+export async function deleteCanvasNode(canvasId: string, nodeId: string): Promise<void> {
+  return requestJson<void>(`/api/canvas/${canvasId}/nodes/${nodeId}`, { method: 'DELETE' });
+}
+
+export async function deleteCanvasEdge(canvasId: string, edgeId: string): Promise<void> {
+  return requestJson<void>(`/api/canvas/${canvasId}/edges/${edgeId}`, { method: 'DELETE' });
+}
+
 export async function listAssets(projectId?: string): Promise<AssetResponse[]> {
   const url = new URL(apiUrl('/api/assets'));
   if (projectId) {
     url.searchParams.set('projectId', projectId);
   }
   return requestJson<AssetResponse[]>(url.toString());
+}
+
+export async function getAsset(assetId: string): Promise<AssetResponse> {
+  return requestJson<AssetResponse>(`/api/assets/${assetId}`);
 }
 
 export async function createAsset(payload: {
@@ -461,4 +473,8 @@ export async function listTasks(projectId?: string): Promise<TaskResponse[]> {
     url.searchParams.set('projectId', projectId);
   }
   return requestJson<TaskResponse[]>(url.toString());
+}
+
+export async function getTask(taskId: string): Promise<TaskResponse> {
+  return requestJson<TaskResponse>(`/api/tasks/${taskId}`);
 }

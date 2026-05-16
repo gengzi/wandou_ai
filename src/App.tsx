@@ -8,7 +8,7 @@ import ModelSettingsView from './components/ModelSettingsView.tsx';
 import BackgroundStars from './components/BackgroundStars.tsx';
 import LoginView from './components/LoginView.tsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, UserResponse } from './lib/api.ts';
+import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, logout, UserResponse } from './lib/api.ts';
 
 export default function App() {
   const [view, setView] = useState<string>('home');
@@ -42,6 +42,14 @@ export default function App() {
     setCurrentUser(session.user);
   };
 
+  const handleLogout = async () => {
+    await logout();
+    setCurrentUser(null);
+    setView('home');
+    setWorkspaceProjectId(undefined);
+    setInitialPrompt('');
+  };
+
   if (checkingSession) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-bg-dark text-sm text-slate-400">
@@ -59,7 +67,7 @@ export default function App() {
       <BackgroundStars />
       
       {/* Sidebar - Oii Style */}
-      <Sidebar currentView={view} onViewChange={setView} />
+      <Sidebar currentView={view} onViewChange={setView} onLogout={handleLogout} />
 
       {/* Main Content Area */}
       <main className="flex-1 flex overflow-hidden relative z-10">
