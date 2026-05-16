@@ -3,7 +3,7 @@ import { CheckCircle2, KeyRound, Plus, Save, Trash2 } from 'lucide-react';
 import { createModelConfig, deleteModelConfig, listModelConfigs, ModelConfigResponse, updateModelConfig } from '../lib/api';
 
 type Capability = 'text' | 'image' | 'video' | 'audio';
-type CompatibilityMode = 'openai' | 'qwave-task' | 'qingyun-task';
+type CompatibilityMode = 'openai' | 'qwave-task' | 'qingyun-task' | 'pollinations';
 
 const capabilities: Array<{ id: Capability; label: string; hint: string }> = [
   { id: 'text', label: '文本模型', hint: '剧本、规划、总结' },
@@ -64,6 +64,23 @@ export default function ModelSettingsView() {
     setError('');
     setMessage('');
     setForm({ ...emptyForm, capability });
+  };
+
+  const selectProvider = (provider: string) => {
+    if (provider === 'pollinations') {
+      setForm({
+        ...form,
+        capability: 'image',
+        provider,
+        displayName: 'Pollinations 免费生图',
+        baseUrl: 'https://image.pollinations.ai',
+        modelName: 'flux',
+        compatibilityMode: 'pollinations',
+        apiKey: '',
+      });
+      return;
+    }
+    setForm({ ...form, provider });
   };
 
   const saveConfig = async () => {
@@ -182,7 +199,9 @@ export default function ModelSettingsView() {
                         ? '青云/Vidu 异步任务接口'
                         : config.compatibilityMode === 'qwave-task'
                           ? 'QWave 异步任务接口'
-                          : 'OpenAI 兼容接口'}
+                          : config.compatibilityMode === 'pollinations'
+                            ? 'Pollinations 免费生图'
+                            : 'OpenAI 兼容接口'}
                     </div>
                     <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-500">
                       <KeyRound size={12} />
@@ -218,10 +237,11 @@ export default function ModelSettingsView() {
             <span className="mb-1 block text-xs font-semibold text-slate-400">服务商</span>
             <select
               value={form.provider}
-              onChange={(event) => setForm({ ...form, provider: event.target.value })}
+              onChange={(event) => selectProvider(event.target.value)}
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="pollinations">Pollinations 免费生图</option>
               <option value="qingyun">青云接口</option>
               <option value="deepseek">DeepSeek</option>
               <option value="openai">OpenAI</option>
@@ -258,11 +278,12 @@ export default function ModelSettingsView() {
               className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               <option value="openai">OpenAI 兼容接口</option>
+              <option value="pollinations">Pollinations 免费生图</option>
               <option value="qingyun-task">青云/Vidu 异步任务接口</option>
               <option value="qwave-task">QWave 异步任务接口</option>
             </select>
             <span className="mt-1 block text-[11px] leading-5 text-slate-500">
-              OpenAI 兼容模式使用聊天/生图同步接口；青云/Vidu 和 QWave 用于异步任务式图片、视频模型。
+              OpenAI 兼容模式使用聊天/生图同步接口；Pollinations 可无密钥免费测试生图；青云/Vidu 和 QWave 用于异步任务式图片、视频模型。
             </span>
           </label>
 

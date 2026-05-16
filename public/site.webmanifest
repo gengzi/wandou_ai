@@ -1,0 +1,20 @@
+{
+  "name": "豌豆 AI 创作工作台",
+  "short_name": "豌豆 AI",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#10B981",
+  "background_color": "#0B0B0C",
+  "display": "standalone"
+}

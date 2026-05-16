@@ -10,7 +10,7 @@ public record ModelConfigRequest(
         @NotBlank @Size(max = 120) String displayName,
         @NotBlank @Size(max = 500) String baseUrl,
         @NotBlank @Size(max = 160) String modelName,
-        @Pattern(regexp = "openai|qwave-task|qingyun-task") String compatibilityMode,
+        @Pattern(regexp = "openai|qwave-task|qingyun-task|pollinations") String compatibilityMode,
         @Size(max = 1000) String apiKey,
         Boolean enabled
 ) {

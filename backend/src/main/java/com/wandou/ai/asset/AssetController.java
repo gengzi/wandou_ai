@@ -2,6 +2,7 @@ package com.wandou.ai.asset;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.asset.dto.AssetCreateRequest;
+import com.wandou.ai.asset.dto.AssetImportResponse;
 import com.wandou.ai.asset.dto.AssetPageResponse;
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.common.ApiResponse;
@@ -66,6 +67,12 @@ public class AssetController {
             @RequestParam("file") MultipartFile file
     ) {
         return ApiResponse.ok(assetService.upload(projectId, canvasId, nodeId, type, name, file));
+    }
+
+    @PostMapping("/import-external")
+    @SaCheckPermission("asset:write")
+    public ApiResponse<AssetImportResponse> importExternal(@RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(assetService.importExternalAssets(limit));
     }
 
     @GetMapping("/{assetId}")

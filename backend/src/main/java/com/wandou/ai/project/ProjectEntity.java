@@ -52,4 +52,8 @@ public class ProjectEntity {
     public String canvasId() { return canvasId; }
     public String conversationId() { return conversationId; }
     public Instant createdAt() { return createdAt; }
+
+    public void rename(String name) {
+        this.name = name;
+    }
 }

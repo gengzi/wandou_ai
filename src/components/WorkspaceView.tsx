@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X } from 'lucide-react';
-import { ReactFlow, Background, useNodesState, useEdgesState, addEdge, BackgroundVariant, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
+import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
 import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAssets, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
 
@@ -594,7 +594,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     const output = preferred.data?.output as Record<string, unknown> | undefined;
     setNodeInstruction(typeof output?.prompt === 'string' ? output.prompt : '');
     flowInstance?.setCenter(
-      preferred.position.x + 180,
+      preferred.position.x + 70,
       preferred.position.y + 130,
       { duration: 450, zoom: section === '视频' ? 0.78 : 0.9 }
     );
@@ -614,9 +614,10 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         const nextProject = projectId
           ? await getProject(projectId)
           : await createProject({
-              name: '豌豆工作室项目',
+              name: '',
               description: '前后端联动工作区',
               aspectRatio: '16:9',
+              prompt: initialPrompt,
             });
         if (cancelled) return;
         setProject(nextProject);
@@ -1749,15 +1750,15 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       </div>
 
       {/* Central Canvas Workspace */}
-      <div className="flex-1 min-w-0 flex bg-[#0B0B0C] relative overflow-hidden">
+      <div className="canvas-dot-surface flex-1 min-w-0 flex bg-[#0B0B0C] relative overflow-hidden">
          {/* Center Area container */}
          <div className="flex-1 flex flex-col z-0 relative">
-              <div className="flex-1 min-h-0 bg-[#0B0B0C]">
+              <div className="flex-1 min-h-0">
                 <ReactFlowProvider>
-                  <div className="flex h-full min-h-0">
+                  <div className="relative h-full min-h-0">
                     {/* Left Canvas Nav */}
-                    <aside className="hidden w-[164px] shrink-0 px-4 py-6 xl:block">
-                      <div className="flex flex-col space-y-4 rounded-2xl border border-white/10 bg-[#0B0B0C]/72 px-4 py-4 backdrop-blur">
+                    <aside className="pointer-events-none absolute left-6 top-6 z-30 hidden xl:block">
+                      <div className="pointer-events-auto flex flex-col space-y-4 rounded-2xl border border-white/10 bg-[#0B0B0C]/64 px-4 py-4 shadow-[0_22px_70px_rgba(0,0,0,0.28)] backdrop-blur">
                         {canvasSections.map((item) => (
                           <button
                             key={item}
@@ -1772,7 +1773,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                       </div>
                     </aside>
 
-                    <div className="relative min-w-0 flex-1">
+                    <div className="absolute inset-0">
                       <ReactFlow
                         nodes={nodes}
                         edges={edges}
@@ -1788,10 +1789,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                         nodeTypes={nodeTypes}
                         minZoom={0.1}
                         maxZoom={2}
-                        defaultViewport={{ x: 40, y: 28, zoom: 0.72 }}
+                        defaultViewport={{ x: 260, y: 28, zoom: 0.72 }}
                         fitView={false}
                       >
-                        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#555" />
                         <MiniMap className="hidden xl:block" style={{ backgroundColor: '#1A1A1C', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px' }} nodeColor="#333" maskColor="rgba(0,0,0,0.5)" />
                       </ReactFlow>
                     </div>

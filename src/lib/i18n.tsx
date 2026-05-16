@@ -159,7 +159,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       locale,
       setLocale,
       toggleLocale: () => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN'),
-      t: (key) => messages[locale][key] || messages['zh-CN'][key] || key,
+      t: (key) => messages[locale][key] ?? messages['zh-CN'][key] ?? key,
     };
   }, [locale]);
 

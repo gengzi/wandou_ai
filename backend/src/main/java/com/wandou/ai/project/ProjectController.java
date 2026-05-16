@@ -4,9 +4,11 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.wandou.ai.common.ApiResponse;
 import com.wandou.ai.project.dto.ProjectCreateRequest;
 import com.wandou.ai.project.dto.ProjectResponse;
+import com.wandou.ai.project.dto.ProjectUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,6 +42,14 @@ public class ProjectController {
     @SaCheckPermission("project:read")
     public ApiResponse<ProjectResponse> detail(@PathVariable String projectId) {
         return projectService.get(projectId)
+                .map(ApiResponse::ok)
+                .orElseGet(() -> ApiResponse.fail("project not found"));
+    }
+
+    @PatchMapping("/{projectId}")
+    @SaCheckPermission("project:write")
+    public ApiResponse<ProjectResponse> update(@PathVariable String projectId, @Valid @RequestBody ProjectUpdateRequest request) {
+        return projectService.update(projectId, request)
                 .map(ApiResponse::ok)
                 .orElseGet(() -> ApiResponse.fail("project not found"));
     }

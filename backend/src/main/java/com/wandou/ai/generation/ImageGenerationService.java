@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +49,7 @@ public class ImageGenerationService {
 
     public ImageResult generate(String userId, String prompt, List<String> referenceImageUrls, ModelUsageContext usageContext) {
         ModelConfigEntity config = modelConfigService.findEnabledConfig(userId, "image")
-                .filter(item -> item.apiKeySecret() != null && !item.apiKeySecret().isBlank())
+                .filter(item -> !requiresApiKey(item) || (item.apiKeySecret() != null && !item.apiKeySecret().isBlank()))
                 .orElseThrow(() -> new IllegalStateException("未配置可用的真实生图模型，请先在模型配置里启用 image 模型。"));
         Instant startedAt = Instant.now();
         modelUsageService.ensureSufficientCredits(userId, config.capability(), 1);
@@ -71,6 +73,9 @@ public class ImageGenerationService {
         }
         if ("qingyun-task".equals(config.compatibilityMode())) {
             return generateWithQingyunTask(userId, config, prompt, referenceImageUrls, usageContext, startedAt);
+        }
+        if ("pollinations".equals(config.compatibilityMode())) {
+            return generateWithPollinations(userId, config, prompt, usageContext, startedAt);
         }
         try {
             String response = restClientBuilder.clone()
@@ -118,6 +123,34 @@ public class ImageGenerationService {
             return "https://api.openai.com";
         }
         return baseUrl.replaceAll("/+$", "");
+    }
+
+    private boolean requiresApiKey(ModelConfigEntity config) {
+        return !"pollinations".equals(config.compatibilityMode())
+                && !normalizeBaseUrl(config.baseUrl()).startsWith("mock://");
+    }
+
+    private ImageResult generateWithPollinations(String userId, ModelConfigEntity config, String prompt, ModelUsageContext usageContext, Instant startedAt) {
+        try {
+            String encodedPrompt = URLEncoder.encode(prompt == null ? "" : prompt, StandardCharsets.UTF_8);
+            String model = config.modelName() == null || config.modelName().isBlank() ? "flux" : config.modelName();
+            String url = normalizeBaseUrl(config.baseUrl())
+                    + "/prompt/" + encodedPrompt
+                    + "?width=1024&height=1024&nologo=true&private=true&model="
+                    + URLEncoder.encode(model, StandardCharsets.UTF_8);
+            DownloadedImage image = downloadImage(url);
+            modelUsageService.record(userId, config, usageContext, startedAt, "success", null, "pollinations", 1, length(prompt), 0);
+            return new ImageResult("", image.bytes(), image.contentType(), extension(image.contentType(), url), Map.of(
+                    "modelSource", "configured-image-model",
+                    "modelProvider", config.provider(),
+                    "modelName", config.modelName(),
+                    "modelDisplayName", config.displayName(),
+                    "compatibilityMode", config.compatibilityMode()
+            ));
+        } catch (Exception ex) {
+            modelUsageService.record(userId, config, usageContext, startedAt, "failed", ex.getMessage(), null, 1, length(prompt), 0);
+            throw new IllegalStateException("Pollinations 免费生图调用失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()), ex);
+        }
     }
 
     private ImageResult generateWithQWaveTask(String userId, ModelConfigEntity config, String prompt, List<String> referenceImageUrls, ModelUsageContext usageContext, Instant startedAt) {

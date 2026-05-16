@@ -937,7 +937,8 @@ public class AgentRunService {
         return projectService.create(new com.wandou.ai.project.dto.ProjectCreateRequest(
                 "未命名项目",
                 "由 Agent Run 自动创建",
-                "16:9"
+                "16:9",
+                null
         ));
     }
 

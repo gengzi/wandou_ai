@@ -1,7 +1,8 @@
 import React from 'react';
-import { FolderClosed, Home, Languages, LogOut, PenTool, Settings, Users, WalletCards } from 'lucide-react';
+import { FolderClosed, Home, Languages, LogOut, Moon, PenTool, Settings, Sun, Users, WalletCards } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useI18n } from '../lib/i18n';
+import { useTheme } from '../lib/theme';
 
 interface SidebarProps {
   currentView: string;
@@ -11,6 +12,7 @@ interface SidebarProps {
 
 export default function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
   const { t, toggleLocale } = useI18n();
+  const { theme, toggleTheme } = useTheme();
   const items = [
     { id: 'home', icon: Home, label: t('nav.home') },
     { id: 'workspace', icon: PenTool, label: t('nav.workspace'), badge: t('badge.pro') },
@@ -57,6 +59,17 @@ export default function Sidebar({ currentView, onViewChange, onLogout }: Sidebar
       </div>
 
       <div className="flex flex-col items-center space-y-4">
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={toggleTheme}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-300 cursor-pointer transition-colors bg-[#1A1A1C] border border-white/5"
+          title={theme === 'dark' ? '切换白天模式' : '切换黑夜模式'}
+          aria-label={theme === 'dark' ? '切换白天模式' : '切换黑夜模式'}
+        >
+          {theme === 'dark' ? <Sun size={18} strokeWidth={1.5} /> : <Moon size={18} strokeWidth={1.5} />}
+        </motion.button>
         <motion.button
           type="button"
           whileHover={{ scale: 1.05 }}

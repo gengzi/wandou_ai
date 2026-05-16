@@ -11,10 +11,10 @@ const assetTabs = [
 ];
 
 const folderPalettes = [
-  { tab: '#8adfb2', back: 'rgba(138,223,178,0.16)', front: 'rgba(138,223,178,0.42)', lip: 'rgba(255,255,255,0.22)', glow: 'rgba(138,223,178,0.22)' },
-  { tab: '#91d9ff', back: 'rgba(145,217,255,0.15)', front: 'rgba(145,217,255,0.40)', lip: 'rgba(255,255,255,0.23)', glow: 'rgba(145,217,255,0.20)' },
-  { tab: '#9f82ff', back: 'rgba(159,130,255,0.17)', front: 'rgba(159,130,255,0.44)', lip: 'rgba(255,255,255,0.22)', glow: 'rgba(159,130,255,0.24)' },
-  { tab: '#f1bf76', back: 'rgba(241,191,118,0.14)', front: 'rgba(241,191,118,0.36)', lip: 'rgba(255,255,255,0.20)', glow: 'rgba(241,191,118,0.20)' },
+  { tab: '#8bd9ad', back: 'rgba(222, 248, 236, 0.82)', front: 'rgba(149, 226, 184, 0.52)', lip: 'rgba(122, 211, 165, 0.40)', glow: 'rgba(78, 187, 132, 0.18)', text: '#ffffff' },
+  { tab: '#89cff5', back: 'rgba(227, 247, 255, 0.86)', front: 'rgba(170, 225, 248, 0.48)', lip: 'rgba(121, 202, 239, 0.36)', glow: 'rgba(87, 184, 228, 0.16)', text: '#ffffff' },
+  { tab: '#8d75ff', back: 'rgba(235, 229, 255, 0.84)', front: 'rgba(148, 118, 229, 0.60)', lip: 'rgba(130, 104, 214, 0.42)', glow: 'rgba(120, 90, 220, 0.22)', text: '#ffffff' },
+  { tab: '#92bcff', back: 'rgba(238, 246, 255, 0.86)', front: 'rgba(239, 246, 255, 0.58)', lip: 'rgba(219, 234, 254, 0.52)', glow: 'rgba(95, 150, 220, 0.15)', text: '#ffffff' },
 ];
 
 interface ProjectFolderCardProps {
@@ -35,44 +35,80 @@ const ProjectFolderCard: React.FC<ProjectFolderCardProps> = ({
   onClick,
 }) => {
   return (
-    <button onClick={onClick} className="group flex w-[232px] shrink-0 flex-col items-center text-center">
-      <div className="relative h-[130px] w-[224px] transition-transform duration-300 group-hover:-translate-y-1">
+    <button
+      onClick={onClick}
+      className={`group flex w-[292px] shrink-0 flex-col items-center text-center transition-all duration-300 ${active ? 'scale-[1.02]' : 'hover:-translate-y-1'}`}
+    >
+      <div className="relative h-[178px] w-[292px]">
         <div
-          className="absolute left-5 top-4 h-[86px] w-[184px] rounded-[15px] border backdrop-blur-xl"
+          className="absolute left-[42px] top-[14px] h-[118px] w-[198px] rounded-[16px] border backdrop-blur-xl"
           style={{
             borderColor: palette.tab,
             background: palette.back,
-            boxShadow: active ? `0 18px 58px ${palette.glow}` : `0 12px 34px ${palette.glow}`,
+            boxShadow: `0 16px 44px ${palette.glow}, inset 0 1px 0 rgba(255,255,255,0.76)`,
           }}
         />
         <div
-          className="absolute left-[126px] top-4 h-7 w-[72px] rounded-t-[14px] border border-b-0 backdrop-blur-xl"
+          className="absolute left-[126px] top-[14px] h-[26px] w-[82px] rounded-t-[16px] border border-b-0 backdrop-blur-xl"
           style={{ borderColor: palette.tab, background: palette.back }}
         />
-        {previews.slice(0, 2).map((preview, index) => (
-          <img
-            key={`${title}-${preview}-${index}`}
-            src={preview}
-            alt=""
-            className={`absolute rounded-xl border border-white/45 object-cover shadow-lg ${index === 0 ? 'right-14 top-[24px] h-11 w-[60px]' : 'right-8 top-[40px] h-13 w-[66px] blur-[1px] opacity-70'}`}
-          />
-        ))}
+        <div className="absolute left-[72px] top-[56px] h-[78px] w-[154px] rounded-[14px] bg-white/75 shadow-[0_10px_22px_rgba(31,41,55,0.12)]" />
+        <div className="absolute left-[50px] top-[44px] h-[90px] w-[194px] rounded-[16px] bg-white/48 shadow-[0_10px_26px_rgba(31,41,55,0.10)]" />
+        {previews.slice(0, 2).length > 0 && (
+          <div className="absolute left-[166px] top-[38px] h-[74px] w-[102px] overflow-hidden rounded-[14px] border border-white/65 bg-white/55 shadow-[0_14px_26px_rgba(15,23,42,0.16)]">
+            {previews.slice(0, 2).map((preview, index) => (
+              <img
+                key={`${title}-${preview}-${index}`}
+                src={preview}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.style.display = 'none';
+                }}
+                className={`absolute inset-0 h-full w-full object-cover ${index === 0 ? '' : 'translate-y-9 scale-125 blur-[2px] opacity-70'}`}
+              />
+            ))}
+            <div className="absolute inset-0 bg-white/18" />
+          </div>
+        )}
         <div
-          className={`absolute left-2 top-[54px] h-[72px] w-[216px] overflow-hidden rounded-[15px] border border-white/25 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/40' : ''}`}
-          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.36), 0 14px 34px ${palette.glow}` }}
+          className={`absolute left-[24px] top-[82px] h-[96px] w-[244px] overflow-hidden rounded-[17px] border border-white/48 backdrop-blur-md transition-all duration-300 ${active ? 'ring-2 ring-white/80' : ''}`}
+          style={{ background: palette.front, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.72), 0 24px 44px ${palette.glow}` }}
         >
-          <div className="absolute inset-x-0 top-0 h-6" style={{ background: palette.lip }} />
-          <div className="absolute bottom-5 left-7 max-w-[154px] truncate text-lg font-black text-white drop-shadow-sm">{title}</div>
+          <div className="absolute inset-x-0 top-0 h-[30px]" style={{ background: palette.lip }} />
+          <div className="absolute bottom-7 left-7 text-[20px] font-black tracking-[-0.01em] drop-shadow-sm" style={{ color: palette.text }}>D.Design</div>
         </div>
       </div>
-      <div className="flex items-center justify-center gap-2">
-        <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-slate-500">默认</span>
-        <span className="max-w-[148px] truncate text-base font-bold text-slate-100">{title}</span>
+      <div className="mt-5 flex min-w-0 items-center justify-center gap-2">
+        <span className="shrink-0 rounded-md bg-slate-200/80 px-2.5 py-1 text-sm font-semibold text-slate-500">默认</span>
+        <span className="min-w-0 max-w-[188px] truncate text-base font-bold text-slate-950">{title}</span>
       </div>
-      <div className="mt-2 text-sm text-slate-500">{count}个素材</div>
+      <div className="mt-3 text-base text-slate-500">{count}个素材</div>
     </button>
   );
 };
+
+function NewProjectFolderCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group flex w-[292px] shrink-0 flex-col items-center text-center transition-all duration-300 hover:-translate-y-1"
+    >
+      <div className="relative h-[178px] w-[292px]">
+        <div className="absolute left-[22px] top-2 h-[146px] w-[222px] rounded-[24px] bg-[#dfe8f3]" />
+        <div className="absolute left-[130px] top-[26px] h-[22px] w-[112px] rounded-t-[12px] bg-[#cbdcf0]" />
+        <div className="absolute left-0 top-[48px] h-[130px] w-[268px] rounded-[24px] bg-[#e7edf6] shadow-[0_20px_40px_rgba(125,143,165,0.18)]" />
+        <div className="absolute left-[38px] top-[72px] flex h-[96px] w-[198px] flex-col items-center justify-center rounded-[18px] bg-[#dce6f2] text-slate-400">
+          <Plus size={34} strokeWidth={1.8} />
+          <div className="mt-4 text-base font-semibold leading-8">
+            <div>点击新建或拖拽本地</div>
+            <div>文件夹到这里</div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 text-base font-medium text-slate-500">新建项目素材</div>
+    </button>
+  );
+}
 
 export default function AssetsView() {
   const [assets, setAssets] = useState<AssetResponse[]>([]);
@@ -309,16 +345,16 @@ export default function AssetsView() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0B0B0C] text-slate-200">
+    <div className="h-full overflow-y-auto bg-[#f6f8fc] text-slate-700">
       <main className="flex min-h-full min-w-0 flex-col p-8">
         <header className="mb-6 flex items-center justify-between">
           <div className="min-w-0">
             <div className="text-xs font-semibold tracking-wide text-brand">项目素材</div>
-            <h1 className="mt-1 truncate text-2xl font-bold text-white">素材管理</h1>
+            <h1 className="mt-1 truncate text-2xl font-bold text-slate-950">素材管理</h1>
             <p className="mt-1 text-sm text-slate-500">项目文件夹、媒体资源和生成资产统一归档</p>
           </div>
           <div className="flex space-x-3">
-            <button onClick={() => setNotice('项目内文件夹/标签会在资产目录模型接入后启用；当前先按项目、类型和搜索管理。')} className="px-4 py-2 bg-[#1A1A1C] hover:bg-white/5 border border-white/10 rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors">
+            <button onClick={() => setNotice('项目内文件夹/标签会在资产目录模型接入后启用；当前先按项目、类型和搜索管理。')} className="flex items-center space-x-2 rounded-lg border border-slate-200 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-white">
               <Folder size={16} />
               <span>项目文件夹</span>
             </button>
@@ -329,22 +365,9 @@ export default function AssetsView() {
           </div>
         </header>
 
-        <section className="mb-8 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.012))] px-6 py-7">
-          <div className="flex items-start gap-8 overflow-x-auto pb-2">
-            <button onClick={openCreateForm} className="group flex w-[210px] shrink-0 flex-col items-center text-center">
-              <div className="relative h-[130px] w-[196px] transition-transform duration-300 group-hover:-translate-y-1">
-                <div className="absolute left-0 top-4 h-[82px] w-[172px] rounded-[18px] bg-slate-800/70 shadow-[0_12px_34px_rgba(0,0,0,0.20)]" />
-                <div className="absolute left-[88px] top-2 h-7 w-[72px] rounded-t-[16px] bg-slate-800/70" />
-                <div className="absolute inset-x-0 top-[34px] h-[78px] rounded-[18px] border border-white/10 bg-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" />
-                <div className="absolute inset-x-4 top-[44px] flex h-[58px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-slate-700/50 text-slate-400">
-                  <Plus size={24} />
-                  <div className="text-sm font-semibold leading-5">
-                    点击新建或拖拽<br />文件夹到这里
-                  </div>
-                </div>
-              </div>
-              <div className="text-sm text-slate-500">新建项目素材</div>
-            </button>
+        <section className="mb-10 overflow-hidden bg-[#f6f8fc] px-2 py-5">
+          <div className="flex items-start gap-16 overflow-x-auto pb-6">
+            <NewProjectFolderCard onClick={openCreateForm} />
 
             <ProjectFolderCard
               title="全部项目"
@@ -381,19 +404,19 @@ export default function AssetsView() {
         </section>
 
         <div className="mb-4 min-w-0">
-          <h2 className="truncate text-xl font-bold text-white">
+          <h2 className="truncate text-xl font-bold text-slate-950">
             {selectedProjectId === 'all' ? '全部项目素材' : selectedProjectId === 'unassigned' ? '未归档素材' : projectLabel(selectedProjectId)}
           </h2>
           <div className="mt-1 text-sm text-slate-500">{assetPage.totalElements} 个素材</div>
         </div>
 
         <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex bg-[#1A1A1C] rounded-lg border border-white/5 p-1">
+          <div className="flex rounded-lg border border-slate-200 bg-white/80 p-1 shadow-sm">
             {assetTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveType(tab.id)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeType === tab.id ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${activeType === tab.id ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
               >
                 {tab.label}
               </button>
@@ -402,18 +425,18 @@ export default function AssetsView() {
           <div className="flex space-x-3">
             <div className="relative group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand transition-colors" size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="w-72 bg-[#1A1A1C] border border-white/5 focus:border-brand/50 rounded-lg pl-9 pr-4 py-2 outline-none text-sm transition-all" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="w-72 rounded-lg border border-slate-200 bg-white/85 py-2 pl-9 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-brand/50" />
             </div>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-lg border border-white/5 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50"
+              className="rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand/50"
             >
               <option value={10}>10 / 页</option>
               <option value={20}>20 / 页</option>
               <option value={50}>50 / 页</option>
             </select>
-            <button onClick={() => setNotice('高级筛选会和项目标签、节点来源一起接入；当前支持项目、类型和搜索。')} className="p-2 border border-white/5 rounded-lg bg-[#1A1A1C] hover:bg-white/5 text-slate-400 transition-colors">
+            <button onClick={() => setNotice('高级筛选会和项目标签、节点来源一起接入；当前支持项目、类型和搜索。')} className="rounded-lg border border-slate-200 bg-white/85 p-2 text-slate-500 transition-colors hover:bg-white hover:text-slate-900">
               <Filter size={18} />
             </button>
           </div>
@@ -422,19 +445,19 @@ export default function AssetsView() {
         {notice && (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-brand/25 bg-brand/10 px-4 py-3 text-sm text-brand">
             <span>{notice}</span>
-            <button onClick={() => setNotice(null)} className="text-xs font-semibold text-slate-300 hover:text-white">关闭</button>
+            <button onClick={() => setNotice(null)} className="text-xs font-semibold text-brand hover:text-emerald-700">关闭</button>
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden rounded-2xl border border-white/5 bg-[#121213]">
+        <div className="flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm">
           {error && (
-            <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-3 text-sm text-red-200">
+            <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
               {error}
             </div>
           )}
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/5 text-xs text-slate-500">
+              <tr className="border-b border-slate-200 text-xs text-slate-500">
                 <th className="px-6 py-4 font-medium">名称</th>
                 <th className="px-6 py-4 font-medium">项目</th>
                 <th className="px-6 py-4 font-medium">来源节点</th>
@@ -450,17 +473,17 @@ export default function AssetsView() {
                   </td>
                 </tr>
               ) : filteredAssets.length > 0 ? filteredAssets.map((asset) => (
-                <tr key={asset.id} onClick={() => openAsset(asset.id)} className="border-b border-white/5 hover:bg-white/5 transition-colors group cursor-pointer">
+                <tr key={asset.id} onClick={() => openAsset(asset.id)} className="group cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50">
                   <td className="px-6 py-4 flex items-center space-x-3">
                     {getIcon(asset.type)}
                     <div>
-                      <div className="text-sm font-medium text-slate-200 group-hover:text-brand transition-colors">{asset.name}</div>
+                      <div className="text-sm font-medium text-slate-900 transition-colors group-hover:text-brand">{asset.name}</div>
                       <div className="text-xs text-slate-500">{asset.type}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-400">{projectLabel(asset.projectId)}</td>
-                  <td className="px-6 py-4 text-sm text-slate-400">{asset.nodeId || '--'}</td>
-                  <td className="px-6 py-4 text-sm text-slate-400">{new Date(asset.createdAt).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500">{projectLabel(asset.projectId)}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500">{asset.nodeId || '--'}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
                   <td className="px-6 py-4 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(event) => { event.stopPropagation(); setNotice('素材重命名/删除需要后端资产管理接口。'); }} className="p-1 hover:bg-white/10 rounded text-slate-400">
                       <MoreVertical size={16} />
@@ -476,7 +499,7 @@ export default function AssetsView() {
               )}
             </tbody>
           </table>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-6 py-4 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 text-sm text-slate-500">
             <div>
               {assetPage.totalElements > 0
                 ? `显示 ${pageStart}-${pageEnd} / ${assetPage.totalElements}`
@@ -486,14 +509,14 @@ export default function AssetsView() {
               <button
                 onClick={() => setPage(0)}
                 disabled={currentPage === 0 || loadingPage}
-                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 首页
               </button>
               <button
                 onClick={() => setPage((value) => Math.max(0, value - 1))}
                 disabled={currentPage === 0 || loadingPage}
-                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 上一页
               </button>
@@ -503,14 +526,14 @@ export default function AssetsView() {
               <button
                 onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
                 disabled={currentPage >= totalPages - 1 || loadingPage}
-                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 下一页
               </button>
               <button
                 onClick={() => setPage(totalPages - 1)}
                 disabled={currentPage >= totalPages - 1 || loadingPage}
-                className="h-9 rounded-lg border border-white/10 bg-white/5 px-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 末页
               </button>

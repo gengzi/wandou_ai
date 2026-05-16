@@ -7,12 +7,16 @@ import com.wandou.ai.conversation.ConversationService;
 import com.wandou.ai.conversation.dto.ConversationResponse;
 import com.wandou.ai.project.dto.ProjectCreateRequest;
 import com.wandou.ai.project.dto.ProjectResponse;
+import com.wandou.ai.project.dto.ProjectUpdateRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
@@ -34,7 +38,7 @@ public class ProjectService {
         ConversationResponse conversation = conversationService.create(projectId);
         ProjectEntity project = new ProjectEntity(
                 projectId,
-                request.name(),
+                resolveProjectName(request),
                 request.description(),
                 request.aspectRatio() == null || request.aspectRatio().isBlank() ? "16:9" : request.aspectRatio(),
                 canvas.id(),
@@ -52,6 +56,59 @@ public class ProjectService {
 
     public Optional<ProjectResponse> get(String projectId) {
         return projectRepository.findById(projectId).map(this::toResponse);
+    }
+
+    @Transactional
+    public Optional<ProjectResponse> update(String projectId, ProjectUpdateRequest request) {
+        return projectRepository.findById(projectId)
+                .map(project -> {
+                    project.rename(cleanName(request.name()));
+                    return toResponse(projectRepository.save(project));
+                });
+    }
+
+    private String resolveProjectName(ProjectCreateRequest request) {
+        String manualName = cleanName(request.name());
+        if (!manualName.isBlank()) {
+            return manualName;
+        }
+        return titleFromPrompt(firstPresent(request.prompt(), request.description()));
+    }
+
+    private String cleanName(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String firstPresent(String... values) {
+        return Arrays.stream(values)
+                .filter(value -> value != null && !value.trim().isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    private String titleFromPrompt(String prompt) {
+        String cleaned = cleanName(prompt)
+                .replaceAll("[\\r\\n]+", " ")
+                .replaceAll("[，。！？、；：,.!?;:]+", " ")
+                .replaceAll("\\s+", " ");
+        if (cleaned.isBlank()) {
+            return "未命名创作项目";
+        }
+
+        List<String> stopWords = List.of(
+                "生成", "制作", "创建", "一个", "一段", "一套", "视频", "短片", "项目", "帮我", "请", "需要",
+                "generate", "create", "make", "video", "project", "please", "a", "an", "the"
+        );
+        String title = Arrays.stream(cleaned.split(" "))
+                .map(String::trim)
+                .filter(word -> !word.isBlank())
+                .filter(word -> !stopWords.contains(word.toLowerCase(Locale.ROOT)))
+                .collect(Collectors.joining(" "));
+        if (title.isBlank()) {
+            title = cleaned;
+        }
+        title = title.length() > 18 ? title.substring(0, 18) : title;
+        return title.endsWith("项目") ? title : title + "项目";
     }
 
     private ProjectResponse toResponse(ProjectEntity project) {

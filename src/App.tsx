@@ -8,6 +8,7 @@ import ModelSettingsView from './components/ModelSettingsView.tsx';
 import UsageView from './components/UsageView.tsx';
 import BackgroundStars from './components/BackgroundStars.tsx';
 import LoginView from './components/LoginView.tsx';
+import AppLoadingView from './components/AppLoadingView.tsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, logout, UserResponse } from './lib/api.ts';
 import { useI18n } from './lib/i18n.tsx';
@@ -60,11 +61,7 @@ export default function App() {
   };
 
   if (checkingSession) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-bg-dark text-sm text-slate-400">
-        {t('app.restoreSession')}
-      </div>
-    );
+    return <AppLoadingView message={t('app.restoreSession')} />;
   }
 
   if (!currentUser) {

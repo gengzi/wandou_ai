@@ -2,20 +2,25 @@ package com.wandou.ai.asset;
 
 import com.wandou.ai.asset.dto.AssetResponse;
 import com.wandou.ai.asset.dto.AssetCreateRequest;
+import com.wandou.ai.asset.dto.AssetImportResponse;
 import com.wandou.ai.asset.dto.AssetPageResponse;
 import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.storage.StoredObject;
 import com.wandou.ai.storage.StoredObjectMetadata;
 import com.wandou.ai.storage.VideoStorageService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,10 +29,12 @@ public class AssetService {
 
     private final AssetRepository assetRepository;
     private final VideoStorageService videoStorageService;
+    private final RestClient.Builder restClientBuilder;
 
-    public AssetService(AssetRepository assetRepository, VideoStorageService videoStorageService) {
+    public AssetService(AssetRepository assetRepository, VideoStorageService videoStorageService, RestClient.Builder restClientBuilder) {
         this.assetRepository = assetRepository;
         this.videoStorageService = videoStorageService;
+        this.restClientBuilder = restClientBuilder;
     }
 
     @Transactional
@@ -244,6 +251,48 @@ public class AssetService {
                 });
     }
 
+    @Transactional
+    public AssetImportResponse importExternalAssets(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        List<AssetEntity> assets = assetRepository.findExternalOnlyAssets(PageRequest.of(0, safeLimit));
+        List<AssetImportResponse.AssetImportResult> results = new ArrayList<>();
+        int imported = 0;
+        int failed = 0;
+        for (AssetEntity asset : assets) {
+            try {
+                DownloadedAsset downloaded = download(asset.url());
+                String extension = extensionFromUrl(asset.url(), downloaded.contentType());
+                String objectKey = "projects/" + normalize(asset.projectId()) + "/assets/" + asset.id() + "/imported." + extension;
+                StoredObjectMetadata object = videoStorageService.save(objectKey, downloaded.contentType(), downloaded.bytes());
+                String internalUrl = contentUrl(asset.id());
+                assetRepository.markStored(
+                        asset.id(),
+                        internalUrl,
+                        internalUrl,
+                        object.objectKey(),
+                        object.objectKey(),
+                        object.contentType(),
+                        object.contentType(),
+                        object.size(),
+                        "ready"
+                );
+                imported++;
+                results.add(new AssetImportResponse.AssetImportResult(asset.id(), asset.name(), "imported", "已写入对象存储", internalUrl));
+            } catch (RuntimeException ex) {
+                failed++;
+                assetRepository.markStatus(asset.id(), "external_import_failed");
+                results.add(new AssetImportResponse.AssetImportResult(
+                        asset.id(),
+                        asset.name(),
+                        "failed",
+                        ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage(),
+                        asset.url()
+                ));
+            }
+        }
+        return new AssetImportResponse(assets.size(), imported, failed, results);
+    }
+
     private String normalize(String value) {
         return value == null ? "" : value;
     }
@@ -273,6 +322,45 @@ public class AssetService {
         return "bin";
     }
 
+    private DownloadedAsset download(String url) {
+        ResponseEntity<byte[]> response = restClientBuilder.clone()
+                .build()
+                .get()
+                .uri(URI.create(url))
+                .retrieve()
+                .toEntity(byte[].class);
+        byte[] bytes = response.getBody() == null ? new byte[0] : response.getBody();
+        if (bytes.length == 0) {
+            throw new IllegalStateException("外链下载结果为空");
+        }
+        String contentType = response.getHeaders().getContentType() == null
+                ? "application/octet-stream"
+                : response.getHeaders().getContentType().toString();
+        return new DownloadedAsset(bytes, contentType);
+    }
+
+    private String extensionFromUrl(String url, String contentType) {
+        String normalized = contentType == null ? "" : contentType.toLowerCase();
+        if (normalized.contains("png")) return "png";
+        if (normalized.contains("jpeg") || normalized.contains("jpg")) return "jpg";
+        if (normalized.contains("webp")) return "webp";
+        if (normalized.contains("gif")) return "gif";
+        if (normalized.contains("mp4")) return "mp4";
+        if (normalized.contains("quicktime")) return "mov";
+        try {
+            String path = URI.create(url).getPath();
+            int dot = path.lastIndexOf('.');
+            if (dot >= 0 && dot + 1 < path.length()) {
+                String extension = path.substring(dot + 1).replaceAll("[^A-Za-z0-9]", "");
+                if (!extension.isBlank()) {
+                    return extension;
+                }
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+        return extension("", contentType);
+    }
+
     private AssetResponse toResponse(AssetEntity asset) {
         return new AssetResponse(
                 asset.id(),
@@ -300,5 +388,8 @@ public class AssetService {
             String contentType,
             String filename
     ) {
+    }
+
+    private record DownloadedAsset(byte[] bytes, String contentType) {
     }
 }

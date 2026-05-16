@@ -244,7 +244,7 @@ export interface ModelConfigResponse {
   displayName: string;
   baseUrl: string;
   modelName: string;
-  compatibilityMode: 'openai' | 'qwave-task' | 'qingyun-task';
+  compatibilityMode: 'openai' | 'qwave-task' | 'qingyun-task' | 'pollinations';
   apiKeyPreview: string;
   enabled: boolean;
   createdAt: string;
@@ -439,12 +439,21 @@ export async function getProject(projectId: string): Promise<ProjectResponse> {
 }
 
 export async function createProject(payload: {
-  name: string;
+  name?: string;
   description?: string;
   aspectRatio?: string;
+  prompt?: string;
 }): Promise<ProjectResponse> {
   return requestJson<ProjectResponse>('/api/projects', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProject(projectId: string, payload: { name: string }): Promise<ProjectResponse> {
+  return requestJson<ProjectResponse>(`/api/projects/${projectId}`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });

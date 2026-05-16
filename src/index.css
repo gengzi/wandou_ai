@@ -7,11 +7,39 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
   --color-brand: #10B981;
-  --color-bg-dark: #0B0B0C;
-  --color-panel-dark: #121213;
+  --color-bg-dark: var(--app-bg);
+  --color-panel-dark: var(--app-panel);
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --app-bg: #0B0B0C;
+    --app-panel: #121213;
+    --app-panel-soft: #1A1A1C;
+    --app-surface: rgba(255, 255, 255, 0.055);
+    --app-border: rgba(255, 255, 255, 0.10);
+    --app-border-soft: rgba(255, 255, 255, 0.05);
+    --app-text: #e2e8f0;
+    --app-heading: #ffffff;
+    --app-muted: #64748b;
+    --app-subtle: #94a3b8;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --app-bg: #F6F8FB;
+    --app-panel: #FFFFFF;
+    --app-panel-soft: #F1F5F9;
+    --app-surface: rgba(15, 23, 42, 0.045);
+    --app-border: rgba(15, 23, 42, 0.12);
+    --app-border-soft: rgba(15, 23, 42, 0.08);
+    --app-text: #1E293B;
+    --app-heading: #0F172A;
+    --app-muted: #64748B;
+    --app-subtle: #475569;
+  }
+
   body {
     @apply bg-bg-dark text-slate-200 antialiased font-sans;
   }
@@ -23,4 +51,325 @@
 
 .glow-brand {
   box-shadow: 0 0 20px -5px rgba(124, 58, 237, 0.3);
+}
+
+.canvas-dot-surface {
+  background-color: #0b0b0c;
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.26) 1px, transparent 1px);
+  background-position: 0 0;
+  background-size: 24px 24px;
+}
+
+:root[data-theme="light"] .canvas-dot-surface {
+  background-color: #f8fafc !important;
+  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.18) 1px, transparent 1px);
+}
+
+.canvas-dot-surface .react-flow,
+.canvas-dot-surface .react-flow__renderer,
+.canvas-dot-surface .react-flow__pane,
+.canvas-dot-surface .react-flow__viewport {
+  background: transparent !important;
+}
+
+.wandou-loading-shell {
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 32px;
+}
+
+.wandou-loading-shell.is-light {
+  background:
+    radial-gradient(circle at 50% 26%, rgba(187, 247, 208, 0.34), transparent 32%),
+    radial-gradient(circle at 16% 18%, rgba(191, 219, 254, 0.38), transparent 26%),
+    linear-gradient(135deg, #fbfdfc 0%, #f5faf8 44%, #eef7f4 100%);
+  color: #0f172a;
+}
+
+.wandou-loading-shell.is-dark {
+  background:
+    radial-gradient(circle at 50% 22%, rgba(16, 185, 129, 0.14), transparent 34%),
+    linear-gradient(135deg, #08090a 0%, #0b0b0c 52%, #101312 100%);
+  color: #f8fafc;
+}
+
+.wandou-loading-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(to right, rgba(100, 116, 139, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(100, 116, 139, 0.08) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 68%);
+}
+
+.wandou-loading-card {
+  position: relative;
+  display: grid;
+  width: min(560px, 100%);
+  grid-template-columns: auto 1fr;
+  gap: 22px;
+  align-items: center;
+  border-radius: 28px;
+  padding: 28px;
+  backdrop-filter: blur(22px);
+}
+
+.is-light .wandou-loading-card {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 28px 90px rgba(15, 118, 110, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.is-dark .wandou-loading-card {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(18, 18, 19, 0.72);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.wandou-loading-orbit {
+  position: relative;
+  display: flex;
+  height: 104px;
+  width: 104px;
+  align-items: center;
+  justify-content: center;
+}
+
+.wandou-loading-logo {
+  z-index: 2;
+  display: flex;
+  height: 56px;
+  width: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: white;
+  font-size: 28px;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.08em;
+  box-shadow: 0 18px 36px rgba(16, 185, 129, 0.28);
+}
+
+.wandou-loading-ring {
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+}
+
+.wandou-loading-ring.ring-a {
+  animation: wandou-spin 3.8s linear infinite;
+  border-top-color: rgba(16, 185, 129, 0.85);
+}
+
+.wandou-loading-ring.ring-b {
+  inset: 18px;
+  animation: wandou-spin 2.8s linear infinite reverse;
+  border-right-color: rgba(59, 130, 246, 0.45);
+}
+
+.wandou-loading-dot {
+  position: absolute;
+  z-index: 3;
+  height: 7px;
+  width: 7px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.72);
+  animation: wandou-pulse 1.7s ease-in-out infinite;
+}
+
+.wandou-loading-dot.dot-a {
+  right: 10px;
+  top: 22px;
+}
+
+.wandou-loading-dot.dot-b {
+  bottom: 14px;
+  left: 26px;
+  animation-delay: 0.2s;
+}
+
+.wandou-loading-dot.dot-c {
+  right: 24px;
+  bottom: 22px;
+  animation-delay: 0.4s;
+}
+
+.wandou-loading-copy {
+  min-width: 0;
+}
+
+.wandou-loading-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.wandou-loading-copy h1 {
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.wandou-loading-copy p {
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.is-dark .wandou-loading-copy p {
+  color: #94a3b8;
+}
+
+.wandou-loading-progress {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.14);
+}
+
+.wandou-loading-progress span {
+  display: block;
+  height: 100%;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #10b981, transparent);
+  animation: wandou-progress 1.35s ease-in-out infinite;
+}
+
+@keyframes wandou-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wandou-pulse {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes wandou-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@layer utilities {
+  :root[data-theme="light"] [class*="bg-[#08090A]"],
+  :root[data-theme="light"] [class*="bg-[#0B0B0C]"],
+  :root[data-theme="light"] [class*="bg-bg-dark"] {
+    background-color: var(--app-bg) !important;
+  }
+
+  :root[data-theme="light"] [class*="bg-[#101112]"],
+  :root[data-theme="light"] [class*="bg-[#111315]"],
+  :root[data-theme="light"] [class*="bg-[#121213]"],
+  :root[data-theme="light"] [class*="bg-[#121416]"],
+  :root[data-theme="light"] [class*="bg-[#171719]"] {
+    background-color: var(--app-panel) !important;
+  }
+
+  :root[data-theme="light"] [class*="bg-[#1A1A1C]"] {
+    background-color: var(--app-panel-soft) !important;
+  }
+
+  :root[data-theme="light"] [class*="bg-white/5"],
+  :root[data-theme="light"] [class*="bg-white/[0.03"],
+  :root[data-theme="light"] [class*="bg-white/[0.035"],
+  :root[data-theme="light"] [class*="bg-white/[0.04"],
+  :root[data-theme="light"] [class*="bg-white/[0.045"],
+  :root[data-theme="light"] [class*="bg-white/[0.055"],
+  :root[data-theme="light"] [class*="bg-black/20"] {
+    background-color: var(--app-surface) !important;
+  }
+
+  :root[data-theme="light"] [class*="border-white/5"],
+  :root[data-theme="light"] [class*="border-white/10"],
+  :root[data-theme="light"] [class*="border-white/15"],
+  :root[data-theme="light"] [class*="border-dashed border-white/20"],
+  :root[data-theme="light"] [class*="border-dashed border-white/25"],
+  :root[data-theme="light"] [class*="border-dashed border-white/28"] {
+    border-color: var(--app-border) !important;
+  }
+
+  :root[data-theme="light"] [class*="text-slate-100"],
+  :root[data-theme="light"] [class*="text-slate-200"],
+  :root[data-theme="light"] [class*="text-white"] {
+    color: var(--app-heading) !important;
+  }
+
+  :root[data-theme="light"] [class*="text-slate-300"],
+  :root[data-theme="light"] [class*="text-slate-400"] {
+    color: var(--app-subtle) !important;
+  }
+
+  :root[data-theme="light"] [class*="text-slate-500"],
+  :root[data-theme="light"] [class*="placeholder:text-slate-500"]::placeholder,
+  :root[data-theme="light"] [class*="placeholder:text-slate-600"]::placeholder {
+    color: var(--app-muted) !important;
+  }
+
+  :root[data-theme="light"] .bg-brand,
+  :root[data-theme="light"] [class*="bg-brand"] {
+    background-color: #10B981 !important;
+  }
+
+  :root[data-theme="light"] .bg-brand [class*="text-white"],
+  :root[data-theme="light"] [class*="bg-brand"][class*="text-white"],
+  :root[data-theme="light"] [class*="bg-brand"] [class*="text-white"] {
+    color: #ffffff !important;
+  }
+
+  :root[data-theme="light"] [class*="text-brand"] {
+    color: #059669 !important;
+  }
+
+  :root[data-theme="light"] input,
+  :root[data-theme="light"] textarea,
+  :root[data-theme="light"] select {
+    color: var(--app-heading);
+  }
+
+  :root[data-theme="light"] .react-flow__background {
+    background-color: #F8FAFC;
+  }
+
+  :root[data-theme="light"] .react-flow__background pattern circle {
+    fill: rgba(15, 23, 42, 0.25);
+  }
+
+  :root[data-theme="light"] .react-flow__node {
+    color: var(--app-heading);
+  }
+
+  :root[data-theme="light"] .fixed.inset-0.pointer-events-none.overflow-hidden {
+    opacity: 0.18;
+  }
 }

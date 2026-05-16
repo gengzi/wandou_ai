@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Languages, LockKeyhole, LogIn } from 'lucide-react';
+import { Languages, LockKeyhole, LogIn, Moon, Sun } from 'lucide-react';
 import { login, LoginResponse } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import { useTheme } from '../lib/theme';
 
 interface LoginViewProps {
   onAuthenticated: (session: LoginResponse) => void;
@@ -9,6 +10,7 @@ interface LoginViewProps {
 
 export default function LoginView({ onAuthenticated }: LoginViewProps) {
   const { t, toggleLocale } = useI18n();
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('admin@wandou.ai');
   const [password, setPassword] = useState('Wandou@123456');
   const [error, setError] = useState<string | null>(null);
@@ -41,15 +43,26 @@ export default function LoginView({ onAuthenticated }: LoginViewProps) {
               <p className="text-xs text-slate-500">{t('login.subtitle')}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={toggleLocale}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-            aria-label={t('language.switch')}
-            title={t('language.switch')}
-          >
-            <Languages size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleLocale}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+              aria-label={t('language.switch')}
+              title={t('language.switch')}
+            >
+              <Languages size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+              aria-label={theme === 'dark' ? '切换白天模式' : '切换黑夜模式'}
+              title={theme === 'dark' ? '切换白天模式' : '切换黑夜模式'}
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4">
