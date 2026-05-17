@@ -224,7 +224,7 @@ export const CharacterNode = ({ id, data }: any) => {
                         <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover/img:scale-105" alt={getString(character.name, '角色素材')} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 opacity-0 group-hover/img:opacity-100 flex flex-col justify-between p-1.5 transition-opacity">
                           <div className="flex justify-end">
-                            <button onClick={() => emitNodeAction('download', id, data, { url: imageUrl })} className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="高清看图">
+                            <button onClick={() => emitNodeAction('preview', id, data, { url: imageUrl, mediaType: 'image' })} className="p-1.5 bg-black/60 backdrop-blur rounded-lg hover:bg-brand text-slate-300 hover:text-white transition-colors" title="放大预览">
                               <Maximize2 size={12} />
                             </button>
                           </div>
@@ -357,7 +357,7 @@ export const ImagesNode = ({ id, data }: any) => {
                )}
                <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center opacity-0 group-hover/video:opacity-100 transition-opacity">
                   <span className="px-2 py-1 bg-black/70 backdrop-blur-md rounded-[6px] text-[10px] text-white font-medium">{getString(data?.output?.duration, '预览')}</span>
-                  <button onClick={() => emitNodeAction('download', id, data, { url: videoUrl || imageSrc })} className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip">
+                  <button onClick={() => emitNodeAction('preview', id, data, { url: videoUrl || imageSrc, thumbnailUrl: imageSrc, mediaType: videoUrl ? 'video' : 'image' })} className="p-1.5 bg-black/70 backdrop-blur-md rounded-[6px] hover:bg-brand text-white transition-colors tooltip" title="放大预览">
                      <Maximize2 size={12} />
                   </button>
                </div>
@@ -401,7 +401,7 @@ export const ImagesNode = ({ id, data }: any) => {
               <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover/inner:scale-110" alt="生成素材" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent opacity-0 group-hover/inner:opacity-100 transition-opacity flex flex-col justify-between p-1.5">
                 <div className="flex justify-end">
-                   <button onClick={() => emitNodeAction('download', id, data, { url })} className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="高清大图">
+                   <button onClick={() => emitNodeAction('preview', id, data, { url, mediaType: 'image' })} className="p-1.5 bg-black/50 backdrop-blur rounded-lg hover:bg-brand text-white transition-colors" title="放大预览">
                       <Maximize2 size={12} />
                    </button>
                 </div>

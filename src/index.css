@@ -228,17 +228,23 @@
 
 :root[data-theme="light"] .wandou-workspace-sidebar :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
 :root[data-theme="light"] .wandou-node-config-panel :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-shot-strip :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-media-preview :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
 :root[data-theme="light"] .wandou-canvas-nav .text-white {
   color: #0f172a !important;
 }
 
 :root[data-theme="light"] .wandou-workspace-sidebar :is(.text-slate-400, .text-slate-500, .text-slate-600),
-:root[data-theme="light"] .wandou-node-config-panel :is(.text-slate-400, .text-slate-500, .text-slate-600) {
+:root[data-theme="light"] .wandou-node-config-panel :is(.text-slate-400, .text-slate-500, .text-slate-600),
+:root[data-theme="light"] .wandou-shot-strip :is(.text-slate-400, .text-slate-500, .text-slate-600),
+:root[data-theme="light"] .wandou-media-preview :is(.text-slate-400, .text-slate-500, .text-slate-600) {
   color: #64748b !important;
 }
 
 :root[data-theme="light"] .wandou-workspace-sidebar .text-brand,
-:root[data-theme="light"] .wandou-node-config-panel .text-brand {
+:root[data-theme="light"] .wandou-node-config-panel .text-brand,
+:root[data-theme="light"] .wandou-shot-strip .text-brand,
+:root[data-theme="light"] .wandou-media-preview .text-brand {
   color: #059669 !important;
 }
 
@@ -263,6 +269,8 @@
 
 :root[data-theme="light"] .wandou-floating-panel,
 :root[data-theme="light"] .wandou-canvas-toolbar,
+:root[data-theme="light"] .wandou-shot-strip,
+:root[data-theme="light"] .wandou-media-preview,
 :root[data-theme="light"] .wandou-node-config-panel,
 :root[data-theme="light"] .wandou-node-config-header {
   border-color: rgba(15, 23, 42, 0.12) !important;

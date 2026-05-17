@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
+import { Share2, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown, Download } from 'lucide-react';
 import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType, ConnectionLineType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
 import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, ModelConfigResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getAuthToken, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAgentRuns, listAssets, listModelConfigs, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
@@ -286,6 +286,13 @@ interface MessageMedia {
   name: string;
   url: string;
   thumbnailUrl: string;
+}
+
+interface MediaPreviewState {
+  type: 'image' | 'video';
+  title: string;
+  url: string;
+  thumbnailUrl?: string;
 }
 
 interface RestoredProjectContext {
@@ -1034,6 +1041,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [setupError, setSetupError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<MediaPreviewState | null>(null);
   const [usageSummary, setUsageSummary] = useState<UsageSummaryResponse | null>(null);
   const [modelConfigs, setModelConfigs] = useState<ModelConfigResponse[]>([]);
   const [selectedTextModelId, setSelectedTextModelId] = useState('');
@@ -1323,6 +1331,33 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       preferred.position.y + 130,
       { duration: 450, zoom: section === '视频' ? 0.78 : 0.9 }
     );
+  }, [flowInstance, nodes, workflowShotIndex]);
+
+  const focusShot = useCallback((shotIndex: number | null) => {
+    setExpandedShotIndex(shotIndex);
+    if (!shotIndex) {
+      setSelectedNodeId(null);
+      setActiveCanvasSection('总览');
+      window.requestAnimationFrame(() => {
+        flowInstance?.fitView({ duration: 360, padding: 0.24 });
+      });
+      return;
+    }
+
+    const shotNodes = nodes.filter((node) => workflowShotIndex.shotIndexByNode.get(node.id) === shotIndex);
+    const preferred = shotNodes.find((node) => node.data?.status === 'running') || shotNodes[0];
+    if (!preferred) return;
+    setSelectedNodeId(preferred.id);
+    setActiveCanvasSection(sectionForNode(preferred));
+    const output = preferred.data?.output as Record<string, unknown> | undefined;
+    setNodeInstruction(typeof output?.prompt === 'string' ? output.prompt : '');
+    window.requestAnimationFrame(() => {
+      flowInstance?.setCenter(
+        preferred.position.x + 140,
+        preferred.position.y + 120,
+        { duration: 360, zoom: 0.78 }
+      );
+    });
   }, [flowInstance, nodes, workflowShotIndex]);
 
   const applyCanvas = useCallback((canvas: CanvasResponse) => {
@@ -2183,6 +2218,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         title?: string;
         prompt?: string;
         url?: string;
+        mediaType?: string;
+        thumbnailUrl?: string;
       }>).detail;
       if (!detail?.nodeId) return;
 
@@ -2234,8 +2271,24 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         return;
       }
 
+      if (detail.action === 'preview' && detail.url) {
+        setMediaPreview({
+          type: detail.mediaType === 'video' ? 'video' : 'image',
+          title: detail.title || '媒体预览',
+          url: detail.url,
+          thumbnailUrl: detail.thumbnailUrl,
+        });
+        return;
+      }
+
       if (detail.action === 'download' && detail.url) {
-        window.open(detail.url, '_blank', 'noopener,noreferrer');
+        const link = document.createElement('a');
+        link.href = detail.url;
+        link.download = detail.title || 'wandou-media';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
         return;
       }
 
@@ -2246,6 +2299,17 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     window.addEventListener('wandou:canvas-node-action', handleNodeAction);
     return () => window.removeEventListener('wandou:canvas-node-action', handleNodeAction);
   }, [deleteNodePersistently, openScriptEditor, runAgent]);
+
+  useEffect(() => {
+    if (!mediaPreview) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMediaPreview(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mediaPreview]);
 
   useEffect(() => {
     const prompt = initialPrompt?.trim();
@@ -2638,9 +2702,52 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                       </div>
                     </aside>
 
+                    {performanceCanvasMode && (
+                      <div className="wandou-shot-strip pointer-events-auto absolute right-5 top-5 z-30 hidden max-w-[min(680px,calc(100%-220px))] rounded-2xl border border-white/10 bg-[#111112]/92 p-2 shadow-2xl backdrop-blur lg:block">
+                        <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-bold text-slate-200">轻量镜头视图</div>
+                            <div className="truncate text-[10px] text-slate-500">
+                              {shotSummaries.length} 个镜头 · 当前渲染 {visibleCanvasNodes.length}/{nodes.length} 个节点
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => focusShot(null)}
+                            className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${expandedShotIndex ? 'border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white' : 'border border-brand/30 bg-brand/15 text-brand'}`}
+                          >
+                            总览
+                          </button>
+                        </div>
+                        <div className="flex max-w-full items-center gap-1 overflow-x-auto pb-0.5">
+                          {visibleShotSummaries.map((shot) => (
+                            <button
+                              key={shot.shotIndex}
+                              type="button"
+                              onClick={() => focusShot(shot.shotIndex)}
+                              className={`flex min-w-[62px] flex-col items-start rounded-xl border px-2.5 py-2 text-left transition-colors ${
+                                expandedShotIndex === shot.shotIndex
+                                  ? 'border-brand/45 bg-brand/15 text-brand'
+                                  : shot.failedCount > 0
+                                    ? 'border-red-400/20 bg-red-500/10 text-red-200 hover:border-red-300/35'
+                                    : shot.runningCount > 0
+                                      ? 'border-yellow-300/20 bg-yellow-300/10 text-yellow-100 hover:border-yellow-200/35'
+                                      : 'border-white/10 bg-white/[0.035] text-slate-300 hover:border-white/20 hover:bg-white/[0.07]'
+                              }`}
+                            >
+                              <span className="text-[11px] font-bold">Shot {String(shot.shotIndex).padStart(2, '0')}</span>
+                              <span className="mt-0.5 text-[9px] text-slate-500">
+                                {shot.runningCount > 0 ? '生成中' : shot.failedCount > 0 ? '需处理' : `${shot.successCount}/${shot.nodeCount}`}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="absolute inset-0">
                       <ReactFlow
-                        nodes={nodes}
+                        nodes={visibleCanvasNodes}
                         edges={canvasEdges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
@@ -2654,6 +2761,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                         nodeTypes={nodeTypes}
                         connectionLineType={ConnectionLineType.Bezier}
                         connectionLineStyle={{ stroke: '#34d399', strokeWidth: 1.8, opacity: 0.85 }}
+                        onlyRenderVisibleElements
                         minZoom={0.1}
                         maxZoom={2}
                         defaultViewport={{ x: 20, y: 28, zoom: 0.62 }}
@@ -2870,6 +2978,68 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
 
           </div>
+      {mediaPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 px-5 py-6 backdrop-blur-sm"
+          onClick={() => setMediaPreview(null)}
+        >
+          <div
+            className="wandou-media-preview flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#101112] shadow-[0_30px_120px_rgba(0,0,0,0.62)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-slate-100">{mediaPreview.title}</div>
+                <div className="text-[11px] text-slate-500">{mediaPreview.type === 'video' ? '视频预览' : '图片预览'}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = mediaPreview.url;
+                    link.download = mediaPreview.title || 'wandou-media';
+                    link.rel = 'noopener';
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                  }}
+                  className="flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+                >
+                  <Download size={14} />
+                  <span>下载</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMediaPreview(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+                  aria-label="关闭预览"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-4">
+              {mediaPreview.type === 'video' ? (
+                <video
+                  src={mediaPreview.url}
+                  poster={mediaPreview.thumbnailUrl}
+                  controls
+                  autoPlay
+                  className="max-h-[78vh] max-w-full rounded-xl object-contain"
+                />
+              ) : (
+                <img
+                  src={mediaPreview.url}
+                  alt={mediaPreview.title}
+                  className="max-h-[78vh] max-w-full rounded-xl object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {shareDialogOpen && project && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#121213] p-5 text-slate-200 shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
