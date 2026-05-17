@@ -239,6 +239,7 @@ export default function AssetsView() {
   });
   const [loadingPage, setLoadingPage] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetResponse | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
@@ -537,33 +538,65 @@ export default function AssetsView() {
               <Folder size={16} />
               <span>项目文件夹</span>
             </button>
-            <button onClick={() => openCreateTypedAsset('character')} className="px-3 py-2 bg-brand hover:bg-brand/90 text-white rounded-lg text-xs font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-brand/20">
-              <BadgePlus size={16} />
-              <span>创建资产</span>
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setCreateMenuOpen((open) => !open)}
+                className="flex items-center space-x-2 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white shadow-lg shadow-brand/20 transition-colors hover:bg-brand/90"
+                aria-expanded={createMenuOpen}
+              >
+                <BadgePlus size={16} />
+                <span>资产控制</span>
+              </button>
+              {createMenuOpen && (
+                <div className="absolute right-0 top-full z-30 mt-2 w-[320px] overflow-hidden rounded-2xl border border-white/10 bg-[#121213] p-2 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+                  <div className="px-2 pb-2 pt-1">
+                    <div className="text-[11px] font-bold text-slate-200">创建与管理</div>
+                    <div className="mt-1 text-[10px] text-slate-500">选择资产类型后登记到当前项目素材库。</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      openCreateForm();
+                    }}
+                    className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-brand">
+                      <Upload size={16} />
+                    </div>
+                    <span className="min-w-0">
+                      <span className="block text-[12px] font-bold text-slate-100">登记或上传素材</span>
+                      <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">手动添加 URL，或在表单中上传文件。</span>
+                    </span>
+                  </button>
+                  <div className="my-1 h-px bg-white/[0.06]" />
+                  {creationCards.map((card) => {
+                    const Icon = card.icon;
+                    return (
+                      <button
+                        key={card.type}
+                        onClick={() => {
+                          setCreateMenuOpen(false);
+                          openCreateTypedAsset(card.type);
+                        }}
+                        className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-brand">
+                          <Icon size={16} />
+                        </div>
+                        <span className="min-w-0">
+                          <span className="block text-[12px] font-bold text-slate-100">{card.title}</span>
+                          <span className="mt-0.5 block line-clamp-2 text-[10px] leading-4 text-slate-500">{card.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
-        <section className="mb-8 grid gap-3 lg:grid-cols-4">
-          {creationCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <button
-                key={card.type}
-                onClick={() => openCreateTypedAsset(card.type)}
-                className="group rounded-2xl border border-white/10 bg-[#111112] p-4 text-left shadow-[0_18px_60px_rgba(0,0,0,0.18)] transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:bg-[#171719]"
-              >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-brand group-hover:bg-brand group-hover:text-white">
-                  <Icon size={18} />
-                </div>
-                <div className="text-sm font-bold text-white">{card.title}</div>
-                <p className="mt-2 text-[11px] leading-5 text-slate-500">{card.description}</p>
-              </button>
-            );
-          })}
-        </section>
-
-        <section ref={foldersRef} className="wandou-scroll-fade mb-8 overflow-hidden bg-bg-dark px-2 py-3">
+        <section ref={foldersRef} className="mb-8 overflow-hidden bg-bg-dark px-2 py-3">
           <div className="mb-1 flex items-center justify-between px-1">
             <h2 className="text-sm font-semibold text-white">项目文件夹</h2>
             <span className="text-xs text-slate-500">按项目聚合素材，横向滚动查看</span>
@@ -612,7 +645,7 @@ export default function AssetsView() {
           <div className="mt-1 text-xs text-slate-500">{assetPage.totalElements} 个素材</div>
         </div>
 
-        <div className="sticky top-0 z-20 mb-6 flex items-center justify-between gap-4 border-y border-white/10 bg-bg-dark/95 py-3 backdrop-blur">
+        <div className="wandou-assets-toolbar sticky top-0 z-20 mb-6 flex items-center justify-between gap-4 border-y border-white/10 bg-bg-dark/95 py-3 backdrop-blur">
           <div className="flex rounded-lg border border-white/10 bg-white/5 p-1">
             {assetTabs.map((tab) => (
               <button
@@ -642,12 +675,12 @@ export default function AssetsView() {
             </button>
             <div className="relative group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-brand transition-colors" size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="h-8 w-64 rounded-lg border border-white/10 bg-[#1A1A1C] py-1.5 pl-9 pr-4 text-xs text-slate-200 outline-none transition-all placeholder:text-slate-500 focus:border-brand/50" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} type="text" placeholder="搜索当前项目素材..." className="wandou-assets-input h-8 w-64 rounded-lg border border-white/10 bg-[#1A1A1C] py-1.5 pl-9 pr-4 text-xs text-slate-200 outline-none transition-all placeholder:text-slate-500 focus:border-brand/50" />
             </div>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="h-8 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-brand/50"
+              className="wandou-assets-input h-8 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-brand/50"
             >
               <option value={10}>10 / 页</option>
               <option value={20}>20 / 页</option>
@@ -667,7 +700,7 @@ export default function AssetsView() {
         )}
 
         {viewMode === 'timeline' ? (
-          <div className="flex-1 rounded-2xl border border-white/10 bg-[#111112] p-5 shadow-2xl">
+          <div className="wandou-assets-table flex-1 rounded-2xl border border-white/10 bg-[#111112] p-5 shadow-2xl">
             {error && (
               <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                 {error}
@@ -717,7 +750,7 @@ export default function AssetsView() {
             )}
           </div>
         ) : (
-        <div className="flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#111112] shadow-2xl">
+        <div className="wandou-assets-table flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#111112] shadow-2xl">
           {error && (
             <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-3 text-sm text-red-300">
               {error}
@@ -726,11 +759,11 @@ export default function AssetsView() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.03] text-[11px] text-slate-500">
-                <th className="px-6 py-4 font-medium">名称</th>
-                <th className="px-6 py-4 font-medium">项目</th>
-                <th className="px-6 py-4 font-medium">来源节点</th>
-                <th className="px-6 py-4 font-medium">修改日期</th>
-                <th className="px-6 py-4 font-medium w-16"></th>
+                <th className="px-6 py-3 font-medium">名称</th>
+                <th className="px-6 py-3 font-medium">项目</th>
+                <th className="px-6 py-3 font-medium">来源节点</th>
+                <th className="px-6 py-3 font-medium">修改日期</th>
+                <th className="px-6 py-3 font-medium w-16"></th>
               </tr>
             </thead>
             <tbody>
@@ -742,17 +775,17 @@ export default function AssetsView() {
                 </tr>
               ) : filteredAssets.length > 0 ? filteredAssets.map((asset) => (
                 <tr key={asset.id} onClick={() => openAsset(asset.id)} className="group cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04]">
-                  <td className="px-6 py-4 flex items-center space-x-3">
+                  <td className="px-6 py-2.5 flex items-center space-x-3">
                     {getIcon(asset.type)}
                     <div>
                       <div className="text-xs font-medium text-slate-200 transition-colors group-hover:text-brand">{asset.name}</div>
                       <div className="text-xs text-slate-500">{typeLabel(asset.type)}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{projectLabel(asset.projectId)}</td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{asset.nodeId || '--'}</td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
-                  <td className="px-6 py-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <td className="px-6 py-2.5 text-xs text-slate-500">{projectLabel(asset.projectId)}</td>
+                  <td className="px-6 py-2.5 text-xs text-slate-500">{asset.nodeId || '--'}</td>
+                  <td className="px-6 py-2.5 text-xs text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
+                  <td className="px-6 py-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(event) => { event.stopPropagation(); openEditAssetForm(asset); }} className="p-1 hover:bg-white/10 rounded text-slate-400">
                       <MoreVertical size={16} />
                     </button>
@@ -767,7 +800,7 @@ export default function AssetsView() {
               )}
             </tbody>
           </table>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-3 text-xs text-slate-500">
             <div>
               {assetPage.totalElements > 0
                 ? `显示 ${pageStart}-${pageEnd} / ${assetPage.totalElements}`
@@ -812,7 +845,7 @@ export default function AssetsView() {
 
         {showCreateForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 py-8 backdrop-blur-sm">
-            <form onSubmit={handleCreateAsset} className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#121213] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+            <form onSubmit={handleCreateAsset} className="wandou-assets-modal w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#121213] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
               <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-5 py-4">
                 <div>
                   <h2 className="text-sm font-bold text-white">{editingAssetId ? '编辑项目素材' : '登记项目素材'}</h2>
@@ -865,7 +898,7 @@ export default function AssetsView() {
       </main>
 
       {selectedAsset && (
-        <div className="fixed inset-y-0 right-0 z-40 w-[360px] border-l border-white/10 bg-[#121213] p-6 shadow-2xl">
+        <div className="wandou-assets-detail fixed inset-y-0 right-0 z-40 w-[360px] border-l border-white/10 bg-[#121213] p-6 shadow-2xl">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-lg font-bold text-white">素材详情</h2>
             <button onClick={() => setSelectedAsset(null)} className="text-slate-500 hover:text-white"><X size={18} /></button>

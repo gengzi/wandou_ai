@@ -46,7 +46,7 @@ export default function UsageView() {
   const pageEnd = Math.min(recordPage.totalElements, currentPage * recordPage.size + records.length);
 
   return (
-    <div className="h-full overflow-y-auto bg-[#08090A] px-10 py-8 text-slate-100">
+    <div className="wandou-admin-page h-full overflow-y-auto bg-[#08090A] px-10 py-8 text-slate-100">
       <div className="mx-auto max-w-[1280px] space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -63,42 +63,42 @@ export default function UsageView() {
         )}
 
         <div className="grid grid-cols-4 gap-4">
-          <div className="rounded-xl border border-brand/20 bg-brand/10 p-5">
+          <div className="wandou-page-card rounded-xl border border-brand/20 bg-brand/10 p-5">
             <WalletCards className="text-brand" size={20} />
             <div className="mt-4 text-xs text-slate-500">剩余积分</div>
             <div className="mt-1 text-3xl font-black text-white">{usage?.remainingCredits ?? '--'}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <div className="wandou-page-card rounded-xl border border-white/10 bg-white/5 p-5">
             <Database className="text-slate-300" size={20} />
             <div className="mt-4 text-xs text-slate-500">已消耗</div>
             <div className="mt-1 text-3xl font-black text-white">{usage?.usedCredits ?? '--'}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <div className="wandou-page-card rounded-xl border border-white/10 bg-white/5 p-5">
             <Activity className="text-slate-300" size={20} />
             <div className="mt-4 text-xs text-slate-500">关联请求</div>
             <div className="mt-1 text-3xl font-black text-white">{usage?.requestCount ?? '--'}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+          <div className="wandou-page-card rounded-xl border border-white/10 bg-white/5 p-5">
             <Clock3 className="text-slate-300" size={20} />
             <div className="mt-4 text-xs text-slate-500">初始额度</div>
             <div className="mt-1 text-3xl font-black text-white">{usage?.initialCredits ?? '--'}</div>
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#101112]">
+        <div className="wandou-page-table overflow-hidden rounded-xl border border-white/10 bg-[#101112]">
           <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3">
             <div className="text-xs font-bold uppercase tracking-wide text-slate-500">模型请求记录</div>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50"
+              className="wandou-page-control rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm text-slate-300 outline-none focus:border-brand/50"
             >
               <option value={10}>10 / 页</option>
               <option value={20}>20 / 页</option>
               <option value={50}>50 / 页</option>
             </select>
           </div>
-          <div className="grid grid-cols-[1fr_120px_90px_90px_90px] border-b border-white/10 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+          <div className="grid grid-cols-[1fr_120px_90px_90px_90px] border-b border-white/10 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-slate-500">
             <div>模型请求</div>
             <div>能力</div>
             <div>积分</div>
@@ -111,7 +111,7 @@ export default function UsageView() {
             <div className="px-4 py-12 text-center text-sm text-slate-500">暂无模型调用记录。</div>
           ) : (
             records.map((record) => (
-              <div key={record.id} className="grid grid-cols-[1fr_120px_90px_90px_90px] items-center border-b border-white/5 px-4 py-3 text-sm last:border-b-0">
+              <div key={record.id} className="grid grid-cols-[1fr_120px_90px_90px_90px] items-center border-b border-white/5 px-4 py-2.5 text-sm last:border-b-0">
                 <div className="min-w-0">
                   <div className="truncate font-semibold text-slate-200">{record.modelDisplayName || record.modelName}</div>
                   <div className="mt-1 truncate text-xs text-slate-500">
@@ -125,7 +125,7 @@ export default function UsageView() {
               </div>
             ))
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-4 py-4 text-sm text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-4 py-3 text-sm text-slate-400">
             <div>
               {recordPage.totalElements > 0
                 ? `显示 ${pageStart}-${pageEnd} / ${recordPage.totalElements}`

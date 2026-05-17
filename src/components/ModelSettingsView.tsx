@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, KeyRound, Plus, Save, Trash2 } from 'lucide-react';
+import { CheckCircle2, CircleHelp, KeyRound, Plus, Save, Trash2 } from 'lucide-react';
 import { createModelConfig, deleteModelConfig, listModelConfigs, ModelConfigResponse, updateModelConfig } from '../lib/api';
 
 type Capability = 'text' | 'image' | 'video' | 'audio';
@@ -24,9 +24,17 @@ const emptyForm = {
   enabled: true,
 };
 
+const compatibilityLabel = (mode?: string) => {
+  if (mode === 'qingyun-task') return '青云/Vidu 异步任务接口';
+  if (mode === 'qwave-task') return 'QWave 异步任务接口';
+  if (mode === 'pollinations') return 'Pollinations 免费生图';
+  return 'OpenAI 兼容接口';
+};
+
 export default function ModelSettingsView() {
   const [configs, setConfigs] = useState<ModelConfigResponse[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [activeCapability, setActiveCapability] = useState<Capability | 'all'>('all');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -44,9 +52,14 @@ export default function ModelSettingsView() {
     }));
   }, [configs]);
 
+  const visibleGroups = activeCapability === 'all'
+    ? grouped
+    : grouped.filter((group) => group.id === activeCapability);
+
   const selectConfig = (config: ModelConfigResponse) => {
     setError('');
     setMessage('');
+    setActiveCapability(config.capability);
     setForm({
       id: config.id,
       capability: config.capability,
@@ -63,6 +76,7 @@ export default function ModelSettingsView() {
   const resetForm = (capability: Capability = 'text') => {
     setError('');
     setMessage('');
+    setActiveCapability(capability);
     setForm({ ...emptyForm, capability });
   };
 
@@ -131,23 +145,30 @@ export default function ModelSettingsView() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[#0B0B0C]/70 text-slate-200">
+    <div className="wandou-admin-page flex h-full w-full overflow-hidden bg-[#0B0B0C]/70 text-slate-200">
       <div className="flex-1 overflow-y-auto p-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <div className="mb-2 text-xs font-bold tracking-[0.24em] text-brand">模型设置</div>
-            <h1 className="text-2xl font-bold text-white">模型配置</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-            每个用户维护自己的模型接入。优先使用兼容接口的地址、密钥、模型名三件套，后续接 OpenAI、兼容网关或第三方适配器都走同一套配置。
-          </p>
-          <p className="mt-2 text-xs text-yellow-200/80">
-            当前版本只保存配置，不执行连接测试；保存后请通过工作区生成链路验证模型可用性。
-          </p>
-        </div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-white">模型配置</h1>
+              <button
+                type="button"
+                className="group relative flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+                aria-label="模型配置说明"
+              >
+                <CircleHelp size={15} />
+                <span className="wandou-model-help-tooltip pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-[340px] -translate-x-1/2 rounded-xl border border-white/10 bg-[#171719]/95 p-3 text-left text-xs leading-5 text-slate-300 shadow-2xl backdrop-blur group-hover:block group-focus:block">
+                  每个用户维护自己的模型接入。优先使用兼容接口的地址、密钥、模型名三件套。
+                  <span className="mt-2 block text-yellow-200/80">当前版本只保存配置，不执行连接测试；保存后请通过工作区生成链路验证模型可用性。</span>
+                </span>
+              </button>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => resetForm('text')}
-            className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-slate-200 hover:bg-white/10"
+            onClick={() => resetForm(activeCapability === 'all' ? 'text' : activeCapability)}
+            className="flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-slate-200 hover:bg-white/10"
           >
             <Plus size={16} />
             新建配置
@@ -157,65 +178,121 @@ export default function ModelSettingsView() {
         {error && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
         {message && <div className="mb-4 rounded-lg border border-brand/30 bg-brand/10 p-3 text-sm text-brand">{message}</div>}
 
-        <div className="grid gap-4 xl:grid-cols-4">
-          {grouped.map((group) => (
-            <section key={group.id} className="rounded-lg border border-white/10 bg-[#121213] p-4">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-white">{group.label}</h2>
-                  <p className="mt-1 text-xs text-slate-500">{group.hint}</p>
+        <div className="mb-4 grid gap-3 xl:grid-cols-4">
+          {grouped.map((group) => {
+            const enabledCount = group.configs.filter((config) => config.enabled).length;
+            const selected = activeCapability === group.id;
+            return (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => setActiveCapability(selected ? 'all' : group.id)}
+              className={`wandou-page-card rounded-xl border p-4 text-left transition-colors ${
+                  selected
+                    ? 'border-brand/50 bg-brand/10'
+                    : 'border-white/10 bg-[#121213] hover:border-white/20 hover:bg-white/[0.035]'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-bold text-white">{group.label}</div>
+                    <div className="mt-1 truncate text-xs text-slate-500">{group.hint}</div>
+                  </div>
+                  <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-semibold text-slate-300">
+                    {enabledCount}/{group.configs.length}
+                  </span>
                 </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="wandou-page-table overflow-hidden rounded-2xl border border-white/10 bg-[#121213]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-bold text-white">配置列表</h2>
+              <p className="mt-1 text-xs text-slate-500">按类型筛选，点击行在右侧编辑。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveCapability('all')}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${activeCapability === 'all' ? 'bg-white text-slate-950' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+              >
+                全部
+              </button>
+              {capabilities.map((capability) => (
                 <button
+                  key={capability.id}
                   type="button"
-                  onClick={() => resetForm(group.id)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                  title={`新增${group.label}`}
-                  aria-label={`新增${group.label}`}
+                  onClick={() => setActiveCapability(capability.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${activeCapability === capability.id ? 'bg-brand text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
                 >
-                  <Plus size={15} />
+                  {capability.label.replace('模型', '')}
                 </button>
-              </div>
-              <div className="space-y-2">
-                {group.configs.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-white/10 p-3 text-xs text-slate-500">还没有配置</div>
-                ) : group.configs.map((config) => (
+              ))}
+            </div>
+          </div>
+
+          <div className="divide-y divide-white/[0.06]">
+            {visibleGroups.map((group) => (
+              <section key={group.id}>
+                <div className="flex items-center justify-between gap-3 bg-white/[0.025] px-4 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-200">{group.label}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">{group.hint}</div>
+                  </div>
                   <button
-                    key={config.id}
                     type="button"
-                    onClick={() => selectConfig(config)}
-                    className={`w-full rounded-md border p-3 text-left transition-colors ${
-                      form.id === config.id
-                        ? 'border-brand/60 bg-brand/10'
-                        : 'border-white/10 bg-black/20 hover:bg-white/5'
-                    }`}
+                    onClick={() => resetForm(group.id)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold text-white">{config.displayName}</span>
-                      {config.enabled && <CheckCircle2 size={14} className="shrink-0 text-brand" />}
-                    </div>
-                    <div className="mt-1 truncate text-xs text-slate-500">{config.modelName}</div>
-                    <div className="mt-1 truncate text-[11px] text-slate-500">
-                      {config.compatibilityMode === 'qingyun-task'
-                        ? '青云/Vidu 异步任务接口'
-                        : config.compatibilityMode === 'qwave-task'
-                          ? 'QWave 异步任务接口'
-                          : config.compatibilityMode === 'pollinations'
-                            ? 'Pollinations 免费生图'
-                            : 'OpenAI 兼容接口'}
-                    </div>
-                    <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-500">
-                      <KeyRound size={12} />
-                      <span>{config.apiKeyPreview || '未保存密钥'}</span>
-                    </div>
+                    <Plus size={14} />
+                    新增
                   </button>
-                ))}
-              </div>
-            </section>
-          ))}
+                </div>
+
+                {group.configs.length === 0 ? (
+                  <div className="px-4 py-5 text-xs text-slate-500">
+                    暂无{group.label}配置，点击右侧新增后填写接口信息。
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.06]">
+                    {group.configs.map((config) => (
+                      <button
+                        key={config.id}
+                        type="button"
+                        onClick={() => selectConfig(config)}
+                        className={`grid w-full grid-cols-[minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(90px,auto)] items-center gap-4 px-4 py-3 text-left transition-colors ${
+                          form.id === config.id
+                            ? 'bg-brand/10'
+                            : 'hover:bg-white/[0.035]'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-white">{config.displayName}</span>
+                            {config.enabled && <CheckCircle2 size={14} className="shrink-0 text-brand" />}
+                          </div>
+                          <div className="mt-1 truncate text-xs text-slate-500">{config.provider}</div>
+                        </div>
+                        <div className="min-w-0 truncate text-xs text-slate-300">{config.modelName}</div>
+                        <div className="min-w-0 truncate text-xs text-slate-500">{compatibilityLabel(config.compatibilityMode)}</div>
+                        <div className="flex items-center justify-end gap-1 text-[11px] text-slate-500">
+                          <KeyRound size={12} />
+                          <span>{config.apiKeyPreview || '未保存密钥'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
         </div>
       </div>
 
-      <aside className="w-[380px] shrink-0 border-l border-white/10 bg-[#121213] p-6">
+      <aside className="wandou-page-panel w-[380px] shrink-0 border-l border-white/10 bg-[#121213] p-6">
         <div className="mb-5">
           <h2 className="text-lg font-bold text-white">{form.id ? '编辑配置' : '新建配置'}</h2>
           <p className="mt-1 text-xs text-slate-500">密钥保存后只显示掩码；编辑时留空会保留原密钥。</p>
@@ -227,7 +304,7 @@ export default function ModelSettingsView() {
             <select
               value={form.capability}
               onChange={(event) => setForm({ ...form, capability: event.target.value as Capability })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               {capabilities.map((capability) => <option key={capability.id} value={capability.id}>{capability.label}</option>)}
             </select>
@@ -238,7 +315,7 @@ export default function ModelSettingsView() {
             <select
               value={form.provider}
               onChange={(event) => selectProvider(event.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               <option value="openai-compatible">OpenAI 兼容</option>
               <option value="pollinations">Pollinations 免费生图</option>
@@ -255,7 +332,7 @@ export default function ModelSettingsView() {
             <input
               value={form.displayName}
               onChange={(event) => setForm({ ...form, displayName: event.target.value })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
               placeholder="例如 OpenAI GPT-5"
             />
           </label>
@@ -265,7 +342,7 @@ export default function ModelSettingsView() {
             <input
               value={form.baseUrl}
               onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
               placeholder="https://api.openai.com/v1"
             />
           </label>
@@ -275,7 +352,7 @@ export default function ModelSettingsView() {
             <select
               value={form.compatibilityMode}
               onChange={(event) => setForm({ ...form, compatibilityMode: event.target.value as CompatibilityMode })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               <option value="openai">OpenAI 兼容接口</option>
               <option value="pollinations">Pollinations 免费生图</option>
@@ -292,7 +369,7 @@ export default function ModelSettingsView() {
             <input
               value={form.modelName}
               onChange={(event) => setForm({ ...form, modelName: event.target.value })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
               placeholder="例如 gpt-5.1、dall-e-3、kling-v1"
             />
           </label>
@@ -302,13 +379,13 @@ export default function ModelSettingsView() {
             <input
               value={form.apiKey}
               onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
-              className="w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+              className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
               placeholder={form.id ? '留空则保持原密钥' : 'sk-...'}
               type="password"
             />
           </label>
 
-          <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+          <label className="wandou-page-control flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2">
             <span className="text-sm font-semibold text-slate-300">启用配置</span>
             <input
               type="checkbox"

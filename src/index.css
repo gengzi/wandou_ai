@@ -28,7 +28,7 @@
 
   :root[data-theme="light"] {
     color-scheme: light;
-    --app-bg: #F6F8FB;
+    --app-bg: #F4F7FB;
     --app-panel: #FFFFFF;
     --app-panel-soft: #F1F5F9;
     --app-surface: rgba(15, 23, 42, 0.045);
@@ -65,11 +65,287 @@
   background-image: radial-gradient(circle, rgba(15, 23, 42, 0.18) 1px, transparent 1px);
 }
 
+:root[data-theme="light"] .wandou-background-stars {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(16, 185, 129, 0.10), transparent 28%),
+    radial-gradient(circle at 78% 8%, rgba(96, 165, 250, 0.10), transparent 24%),
+    linear-gradient(135deg, #f8fafc 0%, #eef4f8 52%, #f6f8fb 100%);
+}
+
+:root[data-theme="light"] .wandou-background-stars > div {
+  background-color: rgba(71, 85, 105, 0.34) !important;
+}
+
+:root[data-theme="light"] .wandou-app-sidebar {
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.92) !important;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.78);
+}
+
+:root[data-theme="light"] .wandou-app-sidebar [class*="bg-[#1A1A1C]"] {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .wandou-app-sidebar [class*="text-brand"] {
+  color: #059669 !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page {
+  background:
+    radial-gradient(circle at 16% 12%, rgba(16, 185, 129, 0.055), transparent 26%),
+    linear-gradient(135deg, #f8fafc 0%, #f3f7fb 56%, #f8fafc 100%) !important;
+  color: #334155 !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page :is(h1, h2, h3, .text-white, .text-slate-100, .text-slate-200) {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page :is(.text-slate-300, .text-slate-400) {
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page :is(.text-slate-500, .text-slate-600) {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page [class*="text-yellow-200"] {
+  color: #a16207 !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page [class*="text-red-200"] {
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page [class*="text-purple-400"] {
+  color: #7e22ce !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page [class*="text-blue-400"] {
+  color: #2563eb !important;
+}
+
+:root[data-theme="light"] .wandou-admin-page [class*="text-green-400"] {
+  color: #059669 !important;
+}
+
+:root[data-theme="light"] .wandou-page-card,
+:root[data-theme="light"] .wandou-page-panel,
+:root[data-theme="light"] .wandou-page-table {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+  background: rgba(255, 255, 255, 0.80) !important;
+  box-shadow: 0 18px 54px rgba(15, 23, 42, 0.06) !important;
+}
+
+:root[data-theme="light"] .wandou-page-table {
+  background: rgba(255, 255, 255, 0.88) !important;
+}
+
+:root[data-theme="light"] .wandou-page-table :is(thead tr, [class*="bg-white/5"], [class*="bg-white/[0.025"]) {
+  background: rgba(241, 245, 249, 0.72) !important;
+}
+
+:root[data-theme="light"] .wandou-page-table :is(tr, th, td, [class*="border-white"]) {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+:root[data-theme="light"] .wandou-page-table tr:hover,
+:root[data-theme="light"] .wandou-page-table button:hover {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+:root[data-theme="light"] .wandou-page-control {
+  border-color: rgba(15, 23, 42, 0.11) !important;
+  background: rgba(248, 250, 252, 0.88) !important;
+  color: #0f172a !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+:root[data-theme="light"] .wandou-page-control::placeholder {
+  color: #94a3b8 !important;
+}
+
 .canvas-dot-surface .react-flow,
 .canvas-dot-surface .react-flow__renderer,
 .canvas-dot-surface .react-flow__pane,
 .canvas-dot-surface .react-flow__viewport {
   background: transparent !important;
+}
+
+:root[data-theme="light"] .wandou-workspace {
+  color: #334155;
+}
+
+:root[data-theme="light"] .wandou-workspace-sidebar,
+:root[data-theme="light"] .wandou-workspace-header,
+:root[data-theme="light"] .wandou-chat-input-shell {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #334155;
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] .wandou-chat-scroll {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.92));
+}
+
+:root[data-theme="light"] .wandou-chat-composer,
+:root[data-theme="light"] .wandou-mobile-chat-composer,
+:root[data-theme="light"] .wandou-generation-panel,
+:root[data-theme="light"] .wandou-script-editor-card {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92)) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+}
+
+:root[data-theme="light"] .wandou-script-editor {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+  background: rgba(248, 250, 252, 0.96) !important;
+}
+
+:root[data-theme="light"] .wandou-workspace-sidebar :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-node-config-panel :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-canvas-nav .text-white {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-workspace-sidebar :is(.text-slate-400, .text-slate-500, .text-slate-600),
+:root[data-theme="light"] .wandou-node-config-panel :is(.text-slate-400, .text-slate-500, .text-slate-600) {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .wandou-workspace-sidebar .text-brand,
+:root[data-theme="light"] .wandou-node-config-panel .text-brand {
+  color: #059669 !important;
+}
+
+:root[data-theme="light"] .wandou-workspace-sidebar .bg-brand,
+:root[data-theme="light"] .wandou-workspace-sidebar .bg-brand * {
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .wandou-chat-composer textarea,
+:root[data-theme="light"] .wandou-mobile-chat-composer textarea,
+:root[data-theme="light"] .wandou-script-editor textarea,
+:root[data-theme="light"] .wandou-script-editor input,
+:root[data-theme="light"] .wandou-node-config-panel textarea {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-chat-composer textarea::placeholder,
+:root[data-theme="light"] .wandou-mobile-chat-composer textarea::placeholder,
+:root[data-theme="light"] .wandou-node-config-panel textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+:root[data-theme="light"] .wandou-model-select,
+:root[data-theme="light"] .wandou-floating-panel,
+:root[data-theme="light"] .wandou-canvas-toolbar,
+:root[data-theme="light"] .wandou-node-config-panel,
+:root[data-theme="light"] .wandou-node-config-header {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  color: #334155 !important;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.10);
+}
+
+:root[data-theme="light"] .wandou-model-select select {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-canvas-nav :is(.text-slate-400, .text-slate-300) {
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] .react-flow__minimap {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.10);
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node > div {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #334155 !important;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12) !important;
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node [class*="bg-[#111112]"],
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node [class*="bg-[#1A1A1C]"],
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node [class*="bg-[#0B0B0C]"] {
+  background-color: #f8fafc !important;
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node [class*="border-white"] {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300) {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node :is(.text-slate-400, .text-slate-500, .text-slate-600) {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .canvas-dot-surface .react-flow__node :is(.bg-brand, .bg-brand *) {
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .wandou-assets-toolbar {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(244, 247, 251, 0.94) !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table,
+:root[data-theme="light"] .wandou-assets-detail,
+:root[data-theme="light"] .wandou-assets-modal {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #334155;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.10) !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table thead tr,
+:root[data-theme="light"] .wandou-assets-modal [class*="bg-white/[0.03"] {
+  background: rgba(241, 245, 249, 0.88) !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table tr,
+:root[data-theme="light"] .wandou-assets-table th,
+:root[data-theme="light"] .wandou-assets-table td {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table tr:hover {
+  background: rgba(15, 23, 42, 0.035) !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-assets-detail :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+:root[data-theme="light"] .wandou-assets-modal :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300) {
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-assets-table :is(.text-slate-400, .text-slate-500, .text-slate-600),
+:root[data-theme="light"] .wandou-assets-detail :is(.text-slate-400, .text-slate-500, .text-slate-600),
+:root[data-theme="light"] .wandou-assets-modal :is(.text-slate-400, .text-slate-500, .text-slate-600) {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .wandou-assets-input,
+:root[data-theme="light"] .wandou-assets-modal input,
+:root[data-theme="light"] .wandou-assets-modal select {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(255, 255, 255, 0.90) !important;
+  color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-assets-input::placeholder,
+:root[data-theme="light"] .wandou-assets-modal input::placeholder {
+  color: #94a3b8 !important;
 }
 
 .wandou-sheen {
@@ -132,31 +408,6 @@
 .group:hover .wandou-folder-preview:nth-child(2) {
   transform: translateY(26px) scale(1.25);
   transition-delay: 50ms;
-}
-
-.wandou-scroll-fade {
-  position: relative;
-}
-
-.wandou-scroll-fade::before,
-.wandou-scroll-fade::after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 5;
-  width: 72px;
-  pointer-events: none;
-  content: "";
-}
-
-.wandou-scroll-fade::before {
-  left: 0;
-  background: linear-gradient(90deg, var(--fade-bg, #f6f8fc), rgba(246, 248, 252, 0));
-}
-
-.wandou-scroll-fade::after {
-  right: 0;
-  background: linear-gradient(270deg, var(--fade-bg, #f6f8fc), rgba(246, 248, 252, 0));
 }
 
 .wandou-soft-pulse {
@@ -436,14 +687,13 @@
     color: var(--app-muted) !important;
   }
 
-  :root[data-theme="light"] .bg-brand,
-  :root[data-theme="light"] [class*="bg-brand"] {
+  :root[data-theme="light"] .bg-brand {
     background-color: #10B981 !important;
   }
 
   :root[data-theme="light"] .bg-brand [class*="text-white"],
-  :root[data-theme="light"] [class*="bg-brand"][class*="text-white"],
-  :root[data-theme="light"] [class*="bg-brand"] [class*="text-white"] {
+  :root[data-theme="light"] .bg-brand.text-white,
+  :root[data-theme="light"] .bg-brand [class*="text-white"] {
     color: #ffffff !important;
   }
 
@@ -469,7 +719,18 @@
     color: var(--app-heading);
   }
 
-  :root[data-theme="light"] .fixed.inset-0.pointer-events-none.overflow-hidden {
+  :root[data-theme="light"] .wandou-background-stars {
     opacity: 0.18;
   }
+}
+
+:root[data-theme="light"] .wandou-model-help-tooltip {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(148, 163, 184, 0.36) !important;
+  color: #334155 !important;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12) !important;
+}
+
+:root[data-theme="light"] .wandou-model-help-tooltip [class*="text-yellow-200"] {
+  color: #a16207 !important;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Play, Plus, BrainCircuit, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, CopyPlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
+import { Share2, Play, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
 import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
 import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, ModelConfigResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getAuthToken, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAssets, listModelConfigs, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
@@ -38,6 +38,101 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [];
 
+const NODE_COLLISION_PADDING_X = 72;
+const NODE_COLLISION_PADDING_Y = 42;
+const NODE_RIGHT_GAP = 430;
+const NODE_LANE_STEP_Y = 310;
+
+function estimateNodeSize(node: Pick<Node, 'type'>): { width: number; height: number } {
+  if (node.type === 'character') return { width: 380, height: 520 };
+  if (node.type === 'storyboard') return { width: 340, height: 520 };
+  if (node.type === 'script') return { width: 320, height: 420 };
+  if (node.type === 'final') return { width: 340, height: 430 };
+  if (node.type === 'audio') return { width: 320, height: 260 };
+  return { width: 300, height: 260 };
+}
+
+function nodesOverlap(left: Node, right: Node): boolean {
+  const leftSize = estimateNodeSize(left);
+  const rightSize = estimateNodeSize(right);
+  return !(
+    left.position.x + leftSize.width + NODE_COLLISION_PADDING_X <= right.position.x
+    || right.position.x + rightSize.width + NODE_COLLISION_PADDING_X <= left.position.x
+    || left.position.y + leftSize.height + NODE_COLLISION_PADDING_Y <= right.position.y
+    || right.position.y + rightSize.height + NODE_COLLISION_PADDING_Y <= left.position.y
+  );
+}
+
+function clampCanvasPosition(position: { x: number; y: number }) {
+  return {
+    x: Math.max(40, position.x),
+    y: Math.max(40, position.y),
+  };
+}
+
+function resolveNodePosition(candidate: Node, existingNodes: Node[]): Node {
+  const occupied = existingNodes.filter((node) => node.id !== candidate.id);
+  const base = clampCanvasPosition(candidate.position);
+  const candidatePositions = [
+    base,
+    { x: base.x + NODE_RIGHT_GAP, y: base.y },
+    { x: base.x, y: base.y + NODE_LANE_STEP_Y },
+    { x: base.x + NODE_RIGHT_GAP, y: base.y + NODE_LANE_STEP_Y },
+    { x: base.x + NODE_RIGHT_GAP * 2, y: base.y },
+    { x: base.x + NODE_RIGHT_GAP * 2, y: base.y + NODE_LANE_STEP_Y },
+  ];
+
+  for (let lane = 0; lane < 16; lane += 1) {
+    candidatePositions.push({
+      x: base.x + Math.floor(lane / 4) * NODE_RIGHT_GAP,
+      y: base.y + (lane % 4) * NODE_LANE_STEP_Y,
+    });
+  }
+
+  const uniquePositions = candidatePositions.filter((position, index, positions) => (
+    positions.findIndex((item) => item.x === position.x && item.y === position.y) === index
+  ));
+
+  for (const position of uniquePositions) {
+    const next = { ...candidate, position: clampCanvasPosition(position) };
+    if (!occupied.some((node) => nodesOverlap(next, node))) {
+      return next;
+    }
+  }
+
+  const rightMostX = occupied.reduce((max, node) => {
+    const size = estimateNodeSize(node);
+    return Math.max(max, node.position.x + size.width);
+  }, base.x);
+  return {
+    ...candidate,
+    position: {
+      x: rightMostX + NODE_RIGHT_GAP,
+      y: 120 + (occupied.length % 6) * NODE_LANE_STEP_Y,
+    },
+  };
+}
+
+function normalizeCanvasNodes(nextNodes: Node[]): Node[] {
+  return nextNodes.reduce<Node[]>((settled, node) => {
+    settled.push(resolveNodePosition(node, settled));
+    return settled;
+  }, []);
+}
+
+function nextNodePositionNear(basePosition: { x: number; y: number }, type: string | undefined, existingNodes: Node[]) {
+  const candidate = {
+    id: '__candidate__',
+    type,
+    position: {
+      x: basePosition.x + NODE_RIGHT_GAP,
+      y: basePosition.y,
+    },
+    data: {},
+  } as Node;
+  return resolveNodePosition(candidate, existingNodes).position;
+}
+
 interface Message {
   id: string;
   sender: string;
@@ -54,6 +149,14 @@ interface MessageMedia {
   name: string;
   url: string;
   thumbnailUrl: string;
+}
+
+interface RestoredProjectContext {
+  messageCount: number;
+  nodeCount: number;
+  assetCount: number;
+  taskCount: number;
+  updatedAt?: string;
 }
 
 interface TaskItem {
@@ -102,7 +205,7 @@ const defaultGenerationSettings: GenerationSettings = {
 
 function ChatModelSelect({ label, value, configs, onChange }: ChatModelSelectProps) {
   return (
-    <label className="relative flex min-w-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2 py-1 text-[10px] text-slate-400">
+    <label className="wandou-model-select relative flex min-w-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2 py-1 text-[10px] text-slate-400">
       <span className="shrink-0 text-slate-500">{label}</span>
       <select
         value={value}
@@ -130,7 +233,7 @@ function GenerationSettingsPanel({
 }) {
   const patch = (next: Partial<GenerationSettings>) => onChange({ ...settings, ...next });
   return (
-    <div className="mb-3 rounded-[20px] border border-white/10 bg-[#101112] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+    <div className="wandou-generation-panel mb-3 rounded-[20px] border border-white/10 bg-[#101112] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-[12px] font-bold text-slate-100">生成配置</div>
@@ -564,6 +667,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [assets, setAssets] = useState<AssetItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [restoredContext, setRestoredContext] = useState<RestoredProjectContext | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [lastCreativePrompt, setLastCreativePrompt] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -573,7 +677,6 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<string>('idle');
-  const [runError, setRunError] = useState('');
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const [stepOutputs, setStepOutputs] = useState<Record<string, StepOutputState>>({});
   const [setupError, setSetupError] = useState<string | null>(null);
@@ -591,8 +694,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const promptInputRef = useRef<HTMLInputElement>(null);
-  const mobilePromptInputRef = useRef<HTMLInputElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
+  const mobilePromptInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mobileFileInputRef = useRef<HTMLInputElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -601,6 +704,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const internallyDeletedEdgesRef = useRef<Set<string>>(new Set());
   const stepOutputsRef = useRef<Record<string, StepOutputState>>({});
   const autoStartedPromptRef = useRef<string>('');
+  const restoreFitPendingRef = useRef(false);
 
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) : null;
   const selectedNodeType = selectedNode?.type ? String(selectedNode.type) : '';
@@ -614,28 +718,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const enabledImageModels = modelConfigs.filter((config) => config.enabled && config.capability === 'image');
   const enabledVideoModels = modelConfigs.filter((config) => config.enabled && config.capability === 'video');
   const runningTaskCount = tasks.filter(task => task.status === 'running').length;
-  const confirmationStep = confirmation ? stepOutputs[confirmation.checkpoint] : null;
-  const confirmationOutput = confirmationStep?.output;
-  const confirmationSummary = getString(confirmationOutput?.summary, confirmationStep?.content, confirmation?.message);
-  const confirmationStyle = getString(confirmationOutput?.style);
-  const confirmationBeats = Array.isArray(confirmationOutput?.beats) ? confirmationOutput.beats.slice(0, 3).map(String) : [];
-  const confirmationSource = sourceLabel(confirmationOutput);
   const confirmationReferenceAssets = confirmation ? assets
     .filter((asset) => asset.type === 'image')
     .slice(0, 6) : [];
-  const runStatusText = confirmation
-    ? confirmation.message
-    : runStatus === 'interrupted'
-      ? '已打断，等待恢复或取消。'
-      : runStatus === 'success'
-        ? '本次多智能体生成已完成。'
-        : runStatus === 'cancelled'
-          ? '本次生成已取消。'
-          : runStatus === 'failed'
-            ? runError || '本次生成失败，请查看后端错误。'
-            : activeRunId
-              ? '多智能体生成流程运行中'
-              : '等待创作指令';
   const generationSettingsSummary = `${generationSettings.aspectRatio} · ${generationSettings.resolution.toUpperCase()} · ${generationSettings.durationSeconds}s · ${generationSettings.audioEnabled ? '音效开' : '音效关'} · ${generationSettings.multiCameraEnabled ? '多镜头' : '单镜头'}`;
   const latestRunParameters = [...nodes].reverse()
     .map((node) => {
@@ -808,7 +893,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       })[0];
 
     if (!preferred) {
-      setSetupError(`${section} 节点还没有生成，发送创作指令后会自动出现。`);
+      setNotice(`${section} 节点还没有生成，可直接在对话中发送创作指令。`);
       return;
     }
 
@@ -824,7 +909,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   }, [flowInstance, nodes]);
 
   const applyCanvas = useCallback((canvas: CanvasResponse) => {
-    setNodes(canvas.nodes.map(toFlowNode));
+    setNodes(normalizeCanvasNodes(canvas.nodes.map(toFlowNode)));
     setEdges(canvas.edges.map(toFlowEdge));
   }, [setEdges, setNodes]);
 
@@ -834,6 +919,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     async function initWorkspace() {
       try {
         setSetupError(null);
+        setNotice(null);
+        setRestoredContext(null);
+        restoreFitPendingRef.current = false;
         const nextProject = projectId
           ? await getProject(projectId)
           : await createProject({
@@ -855,15 +943,27 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         setTasks(nextTasks.map(toTask));
         setAssets(nextAssets.map(toAsset));
         const nextMessages = conversation.messages.map(toMessage);
+        const latestUserMessage = [...nextMessages].reverse().find((message) => message.role === 'user');
+        setLastCreativePrompt(latestUserMessage?.content || initialPrompt || nextProject.description || '');
         setMessages(nextMessages.length > 0
           ? nextMessages
           : [{
               id: 'welcome',
               sender: '系统',
               role: 'agent',
-              content: '工作区已连接后端。输入创作指令后，智能体流程会实时更新消息、任务队列和画布节点。',
+              content: '输入创作指令开始。智能体会在这里确认方向，并同步更新画布节点。',
               timestamp: new Date(),
             }]);
+        if (projectId) {
+          setRestoredContext({
+            messageCount: conversation.messages.length,
+            nodeCount: canvas.nodes.length,
+            assetCount: nextAssets.length,
+            taskCount: nextTasks.length,
+            updatedAt: conversation.updatedAt || canvas.updatedAt,
+          });
+          restoreFitPendingRef.current = canvas.nodes.length > 0;
+        }
         try {
           const configs = await listModelConfigs();
           if (cancelled) return;
@@ -887,7 +987,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       cancelled = true;
       eventSourceRef.current?.close();
     };
-  }, [applyCanvas, projectId]);
+  }, [applyCanvas, initialPrompt, projectId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -895,13 +995,23 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
   }, [messages, isTyping]);
 
+  useEffect(() => {
+    if (!flowInstance || !restoreFitPendingRef.current || nodes.length === 0) {
+      return;
+    }
+    restoreFitPendingRef.current = false;
+    window.requestAnimationFrame(() => {
+      flowInstance.fitView({ duration: 480, padding: 0.24 });
+    });
+  }, [flowInstance, nodes]);
+
   const upsertNode = useCallback((node: CanvasNodeResponse) => {
     setNodes((currentNodes) => {
       const nextNode = toFlowNode(node);
       const exists = currentNodes.some((item) => item.id === nextNode.id);
       return exists
-        ? currentNodes.map((item) => item.id === nextNode.id ? { ...item, ...nextNode } : item)
-        : [...currentNodes, nextNode];
+        ? currentNodes.map((item) => item.id === nextNode.id ? { ...item, ...nextNode, position: item.position } : item)
+        : [...currentNodes, resolveNodePosition(nextNode, currentNodes)];
     });
   }, [setNodes]);
 
@@ -975,7 +1085,6 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     if (event.event === 'run.started') {
       setLastRunId(event.runId);
       setRunStatus('running');
-      setRunError('');
     }
 
     if (event.event === 'message.delta') {
@@ -1102,6 +1211,21 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     if (event.event === 'agent.confirmation.required') {
       setRunStatus('waiting_confirmation');
       setIsTyping(false);
+      setMessages((prev) => {
+        const messageId = `confirmation-${event.runId}-${String(data.checkpoint || 'review')}`;
+        const nextMessage: Message = {
+          id: messageId,
+          sender: '系统',
+          role: 'agent',
+          content: String(data.message || '请确认后继续。'),
+          timestamp: new Date(event.createdAt),
+          kind: 'process',
+          status: 'running',
+        };
+        return prev.some((item) => item.id === messageId)
+          ? prev.map((item) => item.id === messageId ? nextMessage : item)
+          : [...prev, nextMessage];
+      });
       setConfirmation({
         checkpoint: String(data.checkpoint || 'review'),
         message: String(data.message || '请确认后继续。'),
@@ -1138,7 +1262,6 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       setRunStatus(event.event === 'run.completed' ? 'success' : event.event === 'run.cancelled' ? 'cancelled' : 'failed');
       if (event.event === 'run.failed') {
         const errorMessage = getString(data.error, data.message, '本次生成失败。');
-        setRunError(errorMessage);
         setMessages((prev) => [...prev, {
           id: `failed-${event.runId}`,
           sender: '系统',
@@ -1245,7 +1368,6 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       setActiveRunId(run.runId);
       setLastRunId(run.runId);
       setRunStatus('running');
-      setRunError('');
       setConfirmation(null);
       const source = createRunEventSource(run.runId);
       eventSourceRef.current = source;
@@ -1491,21 +1613,23 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     }
     const nextIndex = nodes.length + 1;
     const basePosition = selectedNode?.position || nodes[nodes.length - 1]?.position || { x: 80, y: 260 };
+    const position = nextNodePositionNear(basePosition, 'script', nodes);
     try {
       const created = await createCanvasNode(project.canvasId, {
         type: 'script',
         title: `补充剧本节点 ${nextIndex}`,
         status: 'idle',
-        position: { x: basePosition.x + 420, y: basePosition.y },
+        position,
         data: { title: `补充剧本节点 ${nextIndex}`, status: 'idle' },
       });
       const flowNode = toFlowNode(created);
-      setNodes((current) => [...current, flowNode]);
+      setNodes((current) => [...current, resolveNodePosition(flowNode, current)]);
       if (selectedNode) {
         const edge = await createCanvasEdge(project.canvasId, { source: selectedNode.id, target: created.id });
         setEdges((current) => addEdge(toFlowEdge(edge), current));
       }
       setSelectedNodeId(created.id);
+      flowInstance?.setCenter(position.x + 160, position.y + 170, { duration: 360, zoom: 0.72 });
       setNotice('已新增节点，可在右侧配置里输入节点指令并重跑。');
     } catch (error) {
       console.error(error);
@@ -1708,11 +1832,11 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   }, [initialPrompt, project, runAgent]);
 
   return (
-    <div className="h-full flex bg-bg-dark text-slate-200">
+    <div className="wandou-workspace h-full flex bg-bg-dark text-slate-200">
       {/* Interaction Sidebar (Left) */}
-      <div className="hidden lg:flex lg:w-[400px] xl:w-[430px] h-full border-r border-white/5 bg-[#151516] flex-col z-20 shadow-2xl relative">
+      <div className="wandou-workspace-sidebar hidden lg:flex lg:w-[400px] xl:w-[430px] h-full border-r border-white/5 bg-[#151516] flex-col z-20 shadow-2xl relative">
         {/* Top Header of Sidebar */}
-        <header className="h-[64px] flex items-center justify-between gap-3 px-5 border-b border-white/5 bg-[#151516]">
+        <header className="wandou-workspace-header h-[64px] flex items-center justify-between gap-3 px-5 border-b border-white/5 bg-[#151516]">
           <div className="flex min-w-0 items-center space-x-3">
              <div className="w-8 h-8 shrink-0 rounded-xl bg-brand flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.3)]">
                 <span className="text-white font-black text-sm italic">W</span>
@@ -1733,9 +1857,13 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
              </button>
              
              {/* Tasks */}
-             <button onClick={handleOpenVideoTasks} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="视频任务">
+             <button onClick={handleOpenVideoTasks} className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title={runningTaskCount > 0 ? `视频任务：${runningTaskCount} 个运行中` : '视频任务'}>
                <Video size={18} />
-               {tasks.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full border border-[#121213]"></span>}
+               {tasks.length > 0 && (
+                 <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-[#121213] bg-brand px-1 text-[9px] font-bold text-white">
+                   {runningTaskCount || tasks.length}
+                 </span>
+               )}
              </button>
 
              {/* Share */}
@@ -1748,59 +1876,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           </div>
         </header>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-hide" ref={scrollRef}>
-          <div className="rounded-[22px] border border-white/10 bg-[#1B1B1D] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[10px] font-bold tracking-[0.18em] text-brand">创作摘要</div>
-                <div className="mt-1 truncate text-[15px] font-bold text-slate-100">
-                  {lastCreativePrompt || inputValue || '描述一个故事短片，智能体会拆解角色、分镜和成片'}
-                </div>
-              </div>
-              <button onClick={handleShareProject} className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-white/10">
-                分享
-              </button>
-            </div>
-            <p className="text-[12px] leading-6 text-slate-300">
-              工作流会先确认故事方向，再生成角色设计稿、分镜关键帧、逐镜头视频片段，最后聚合为完整成片。
-            </p>
-          </div>
-          {/* Task Queue Card */}
-          <div className="bg-[#1A1A1C] border border-brand/20 p-4 rounded-2xl space-y-3 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-              <div className="flex items-center space-x-2">
-                <BrainCircuit size={14} className="text-brand animate-pulse" />
-                <span className="text-xs font-bold text-slate-300">
-                  {runningTaskCount > 0 ? `后台运行中 (${runningTaskCount})` : '后台任务'}
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-500">任务队列</span>
-            </div>
-            <div className="space-y-2">
-              {tasks.length === 0 ? (
-                <div className="text-[11px] text-slate-500">暂无后台任务</div>
-              ) : tasks.slice(0, 3).map((task) => (
-                <button key={task.id} onClick={() => handleOpenTask(task.id)} className="block w-full space-y-1.5 rounded-lg p-1 text-left transition-colors hover:bg-white/5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center space-x-2 text-slate-400 min-w-0">
-                      <div className={`w-1.5 h-1.5 rounded-full ${
-                        task.status === 'success'
-                          ? 'bg-brand'
-                          : task.status === 'failed'
-                            ? 'bg-red-400'
-                            : 'bg-brand animate-pulse'
-                      }`} />
-                      <span className="truncate">{task.message}</span>
-                    </div>
-                    <span className="text-slate-500 font-mono">{task.progress}%</span>
-                  </div>
-                  <div className="w-full h-1 bg-[#0B0B0C] rounded-full overflow-hidden">
-                    <div className="h-full bg-brand rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all" style={{ width: `${task.progress}%` }}></div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+          <div className="wandou-chat-scroll flex-1 overflow-y-auto p-5 space-y-4 scrollbar-hide" ref={scrollRef}>
 
           {setupError && (
             <div className="max-h-28 overflow-auto rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-200 [overflow-wrap:anywhere] whitespace-pre-wrap">
@@ -1817,54 +1893,20 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
           )}
 
-          {(activeRunId || confirmation || runStatus !== 'idle') && (
-            <div className="rounded-xl border border-white/10 bg-[#1A1A1C] p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                <div className="text-[11px] font-bold tracking-wide text-slate-500">智能体运行</div>
-                  <div className="mt-1 truncate text-[12px] font-semibold text-slate-200">
-                    {runStatusText}
-                  </div>
-                </div>
-                <span className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400">{statusLabel(runStatus)}</span>
+          {restoredContext && (
+            <div className="rounded-xl border border-brand/20 bg-brand/10 px-3 py-2 text-[11px] text-slate-300">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-brand">项目已恢复</span>
+                <span className="text-slate-500">
+                  {restoredContext.updatedAt ? new Date(restoredContext.updatedAt).toLocaleString() : ''}
+                </span>
               </div>
-              {(activeRunId || lastRunId) && (
-                <button onClick={handleOpenRunDetail} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-semibold text-slate-300 hover:bg-white/10">
-                  查看运行事件详情
-                </button>
-              )}
-
-              {confirmation && (
-                <div className="space-y-3 rounded-lg border border-brand/30 bg-brand/10 p-3 text-[12px] leading-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-brand">检查点：{confirmation.checkpoint}</span>
-                    {confirmationSource && (
-                      <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[10px] ${
-                        confirmationSource === '模板兜底'
-                          ? 'border-yellow-300/30 bg-yellow-300/10 text-yellow-200'
-                          : 'border-brand/30 bg-brand/15 text-brand'
-                      }`}>
-                        {confirmationSource}
-                      </span>
-                    )}
-                  </div>
-                  {confirmationSummary && (
-                    <p className="text-slate-200">{confirmationSummary}</p>
-                  )}
-                  {confirmationStyle && (
-                    <p className="text-slate-400">风格：{confirmationStyle}</p>
-                  )}
-                  {confirmationBeats.length > 0 && (
-                    <div className="space-y-1.5">
-                      {confirmationBeats.map((beat, index) => (
-                        <div key={`${confirmation.checkpoint}-${index}`} className="rounded-md bg-black/20 px-2 py-1.5 text-slate-300">
-                          {index + 1}. {beat}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
+                <span>{restoredContext.messageCount} 条对话</span>
+                <span>{restoredContext.nodeCount} 个画布节点</span>
+                <span>{restoredContext.assetCount} 个素材</span>
+                <span>{restoredContext.taskCount} 个任务</span>
+              </div>
             </div>
           )}
 
@@ -1925,8 +1967,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           </div>
 
           {scriptEdit && (
-            <div className="border-t border-white/5 bg-[#121213] p-4">
-              <div className="rounded-xl border border-brand/25 bg-[#171719] p-4 shadow-[0_0_24px_rgba(16,185,129,0.08)]">
+            <div className="wandou-script-editor border-t border-white/5 bg-[#121213] p-4">
+              <div className="wandou-script-editor-card rounded-xl border border-brand/25 bg-[#171719] p-4 shadow-[0_0_24px_rgba(16,185,129,0.08)]">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[12px] font-bold text-slate-200">编辑剧本草稿</div>
@@ -1975,7 +2017,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           )}
           
           {/* Chat Input */}
-            <div className="p-4 border-t border-white/5 bg-[#151516]">
+            <div className="wandou-chat-input-shell p-4 border-t border-white/5 bg-[#151516]">
             {(activeRunId || confirmation) && (
               <div className="mb-3 space-y-2">
                 {confirmation && confirmationReferenceAssets.length > 0 && (
@@ -2047,108 +2089,97 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 </div>
               </div>
             )}
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <ChatModelSelect
-                label="文本"
-                value={selectedTextModelId}
-                configs={enabledTextModels}
-                onChange={setSelectedTextModelId}
-              />
-              <ChatModelSelect
-                label="图片"
-                value={selectedImageModelId}
-                configs={enabledImageModels}
-                onChange={setSelectedImageModelId}
-              />
-              <ChatModelSelect
-                label="视频"
-                value={selectedVideoModelId}
-                configs={enabledVideoModels}
-                onChange={setSelectedVideoModelId}
-              />
-              {modelConfigs.length === 0 && (
-                <span className="text-[10px] text-slate-500">可在模型配置中添加可用模型</span>
-              )}
-            </div>
-            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2">
-              <button
-                onClick={() => setSettingsPanelOpen((open) => !open)}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              >
-                <Settings2 size={14} className="shrink-0 text-brand" />
-                <span className="min-w-0">
-                  <span className="block text-[11px] font-bold text-slate-200">下一次生成配置</span>
-                  <span className="block truncate text-[10px] text-slate-500">{generationSettingsSummary}</span>
-                  {latestRunSettingsSummary && (
-                    <span className="block truncate text-[10px] text-slate-600">最近运行：{latestRunSettingsSummary}</span>
-                  )}
-                </span>
-              </button>
-              <button
-                onClick={() => {
-                  setSettingsPanelOpen(false);
-                  setNotice(`已确认生成配置：${generationSettingsSummary}`);
-                }}
-                className="shrink-0 rounded-lg bg-brand/15 px-2.5 py-1.5 text-[11px] font-bold text-brand hover:bg-brand/20"
-              >
-                确认配置
-              </button>
-            </div>
-            {settingsPanelOpen && (
-              <GenerationSettingsPanel settings={generationSettings} onChange={setGenerationSettings} />
-            )}
-            <div className="relative flex items-center gap-2 rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_24%_0%,rgba(16,185,129,0.14),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(26,26,28,0.96))] px-3 py-2 shadow-[0_18px_60px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors focus-within:border-brand/40">
+            <div className="wandou-chat-composer rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_24%_0%,rgba(16,185,129,0.10),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(26,26,28,0.96))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors focus-within:border-brand/40">
               <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleAssetUpload} />
-              <button
-                onClick={() => openFilePicker(false)}
-                disabled={!project || isUploadingAsset}
-                className="group relative h-12 w-[76px] shrink-0 rounded-2xl border border-white/10 bg-white/[0.035] transition-all hover:border-brand/35 hover:bg-brand/10"
-                title="添加图片附件"
-              >
-                <span className="absolute left-3 top-1.5 flex h-9 w-9 rotate-[-6deg] flex-col items-center justify-center rounded-xl border border-dashed border-white/25 bg-[#F7FAF9]/[0.04] text-slate-400 transition-transform group-hover:rotate-[-2deg] group-hover:text-white">
-                  <Plus size={14} />
-                  <span className="text-[9px] font-black leading-none">图片</span>
-                </span>
-                <span className="absolute bottom-2 right-2 text-[10px] font-bold text-slate-400 group-hover:text-white">{isUploadingAsset ? '上传中' : '附件'}</span>
-              </button>
-              <button
-                onClick={handleQuoteSelectedNode}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-                title="引用画布内容"
-              >
-                <CopyPlus size={16} />
-              </button>
-              <input 
-                ref={promptInputRef}
-                type="text" 
-                placeholder="描述或输入指令（支持上传参考图、视频）..." 
-                disabled={!project}
-                className="min-w-0 flex-1 border-none bg-transparent py-1.5 pr-10 text-[12px] text-slate-200 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-              />
-              <div className="absolute right-3 flex items-center">
+              <div className="flex items-start gap-2">
+                <button
+                  onClick={() => openFilePicker(false)}
+                  disabled={!project || isUploadingAsset}
+                  className="group flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-dashed border-white/20 bg-white/[0.035] text-slate-400 transition-all hover:border-brand/35 hover:bg-brand/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  title="上传参考图、视频或音频素材"
+                >
+                  <ImagePlus size={17} className="transition-transform group-hover:scale-105" />
+                </button>
+                <button
+                  onClick={handleQuoteSelectedNode}
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-colors ${
+                    selectedNode
+                      ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15'
+                      : 'border-white/10 bg-white/[0.025] text-slate-500 hover:bg-white/[0.08] hover:text-slate-300'
+                  }`}
+                  title={selectedNode ? '引用选中节点内容' : '先选择画布节点后引用'}
+                >
+                  <MousePointer2 size={17} />
+                </button>
+                <textarea
+                  ref={promptInputRef}
+                  rows={3}
+                  placeholder="描述或输入指令（支持上传参考图、视频）..."
+                  disabled={!project}
+                  className="max-h-40 min-h-[76px] min-w-0 flex-1 resize-y border-none bg-transparent py-1 text-[12px] leading-5 text-slate-200 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                />
                 {inputValue.trim() ? (
                   <button 
                     onClick={handleSendMessage}
                     disabled={isTyping || !project}
-                    className="rounded-xl bg-brand p-1.5 text-white shadow-[0_0_18px_rgba(16,185,129,0.26)] transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-[0_0_18px_rgba(16,185,129,0.26)] transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                    title="发送"
                   >
                     <Send size={14} />
                   </button>
                 ) : (
-                  <button onClick={handleDraftPrompt} disabled={!project} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" title="生成指令草稿">
+                  <button onClick={handleDraftPrompt} disabled={!project} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-40" title="生成指令草稿">
                     <Wand2 size={14} />
                   </button>
                 )}
               </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] pt-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <ChatModelSelect
+                    label="文本"
+                    value={selectedTextModelId}
+                    configs={enabledTextModels}
+                    onChange={setSelectedTextModelId}
+                  />
+                  <ChatModelSelect
+                    label="图片"
+                    value={selectedImageModelId}
+                    configs={enabledImageModels}
+                    onChange={setSelectedImageModelId}
+                  />
+                  <ChatModelSelect
+                    label="视频"
+                    value={selectedVideoModelId}
+                    configs={enabledVideoModels}
+                    onChange={setSelectedVideoModelId}
+                  />
+                  {modelConfigs.length === 0 && (
+                    <span className="text-[10px] text-slate-500">可在模型配置中添加可用模型</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSettingsPanelOpen((open) => !open)}
+                  className="flex min-w-0 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-left text-[10px] text-slate-400 hover:bg-white/[0.07] hover:text-slate-200"
+                  title={latestRunSettingsSummary ? `最近运行：${latestRunSettingsSummary}` : '下一次生成配置'}
+                >
+                  <Settings2 size={13} className="shrink-0 text-brand" />
+                  <span className="max-w-[184px] truncate">参数 {generationSettingsSummary}</span>
+                </button>
+              </div>
             </div>
+            {settingsPanelOpen && (
+              <div className="mt-2">
+                <GenerationSettingsPanel settings={generationSettings} onChange={setGenerationSettings} />
+              </div>
+            )}
           </div>
       </div>
 
@@ -2160,7 +2191,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <ReactFlowProvider>
                   <div className="relative h-full min-h-0">
                     {/* Left Canvas Nav */}
-                    <aside className="pointer-events-none absolute left-6 top-6 z-30 hidden xl:block">
+                    <aside className="wandou-canvas-nav pointer-events-none absolute left-6 top-6 z-30 hidden xl:block">
                       <div className="pointer-events-auto flex flex-col space-y-4 px-2 py-2">
                         {canvasSections.map((item) => (
                           <button
@@ -2203,20 +2234,10 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
           </div>
 
-          {!selectedNode && (
-            <button
-              onClick={() => setSelectedNodeId(nodes[0]?.id || null)}
-                  className="absolute right-4 top-4 z-30 flex h-10 items-center space-x-2 rounded-xl border border-white/10 bg-[#121213]/90 px-3 text-[12px] font-semibold text-slate-300 shadow-xl backdrop-blur hover:bg-[#1A1A1C]"
-                >
-                  <Settings2 size={14} />
-              <span className="hidden sm:inline">选择节点配置</span>
-            </button>
-          )}
-
           {/* Right Properties Panel */}
           {selectedNode && (
-          <div className="absolute left-4 right-4 top-4 bottom-24 lg:left-auto lg:bottom-4 lg:w-[300px] rounded-2xl border border-white/10 bg-[#121213]/95 backdrop-blur-xl shadow-2xl z-30 flex flex-col">
-             <div className="h-10 border-b border-white/5 flex items-center px-4 justify-between bg-[#1A1A1C]">
+          <div className="wandou-node-config-panel absolute left-4 right-4 top-4 bottom-24 lg:left-auto lg:bottom-4 lg:w-[300px] rounded-2xl border border-white/10 bg-[#121213]/95 backdrop-blur-xl shadow-2xl z-30 flex flex-col">
+             <div className="wandou-node-config-header h-10 border-b border-white/5 flex items-center px-4 justify-between bg-[#1A1A1C]">
                 <span className="text-[12px] font-bold text-slate-300 flex items-center space-x-1"><Settings2 size={14}/><span>节点配置</span></span>
                 <button onClick={() => setSelectedNodeId(null)} className="rounded-md px-2 py-1 text-[11px] text-slate-500 hover:bg-white/5 hover:text-slate-300">关闭</button>
              </div>
@@ -2375,7 +2396,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
           {/* Floater Controls (Inside Canvas) */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 hidden lg:flex items-center space-x-2 z-20">
-               <div className="bg-[#1A1A1C] h-10 flex items-center px-1 rounded-xl shadow-xl border border-white/5">
+               <div className="wandou-canvas-toolbar bg-[#1A1A1C] h-10 flex items-center px-1 rounded-xl shadow-xl border border-white/5">
                  <button onClick={handleFocusPrompt} className="p-2 text-slate-400 hover:text-white transition-colors" title="输入对话指令"><MessageSquare size={16} /></button>
                  <button onClick={handleSelectNodeTool} className="p-2 text-slate-400 hover:text-white transition-colors" title="打开节点配置"><MousePointer2 size={16} /></button>
                  <button onClick={handleMagicCanvasTool} className="p-2 text-slate-400 hover:text-white transition-colors" title="整理画布并生成指令草稿"><Wand2 size={16} /></button>
@@ -2385,21 +2406,21 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
 
             <div className="absolute bottom-4 left-4 right-4 z-30 lg:hidden">
-              <div className="flex items-center gap-2 rounded-[22px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,18,19,0.96))] px-2 py-2 shadow-2xl backdrop-blur">
+              <div className="wandou-mobile-chat-composer flex items-center gap-2 rounded-[22px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,18,19,0.96))] px-2 py-2 shadow-2xl backdrop-blur">
                 <input ref={mobileFileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleAssetUpload} />
                 <button onClick={() => openFilePicker(true)} disabled={!project || isUploadingAsset} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/[0.04] text-slate-400 disabled:cursor-not-allowed disabled:opacity-40">
                   <ImagePlus size={16} />
                 </button>
-                <input
+                <textarea
                   ref={mobilePromptInputRef}
-                  type="text"
+                  rows={2}
                   placeholder="输入创作指令..."
                   disabled={!project}
-                  className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[12px] text-slate-200 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="max-h-28 min-h-10 min-w-0 flex-1 resize-y bg-transparent px-2 py-1.5 text-[12px] leading-5 text-slate-200 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                       event.preventDefault();
                       handleSendMessage();
                     }

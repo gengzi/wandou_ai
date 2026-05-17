@@ -11,7 +11,7 @@ export default function BackgroundStars() {
   }));
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div className="wandou-background-stars fixed inset-0 pointer-events-none overflow-hidden z-0">
       {stars.map((star) => (
         <motion.div
           key={star.id}
