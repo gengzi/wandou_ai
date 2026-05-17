@@ -1366,6 +1366,26 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     setExpandedShotIndex(null);
   }, [setEdges, setNodes]);
 
+  const refreshUsageSummary = useCallback(async (showNotice = false) => {
+    try {
+      const summary = await getMyUsage();
+      setUsageSummary(summary);
+      if (showNotice) {
+        const recentCost = summary.recentRecords.slice(0, 3)
+          .map((record) => `${capabilityLabel(record.capability)} ${record.credits} 点`)
+          .join('，');
+        setNotice(`剩余 ${summary.remainingCredits} 点，已用 ${summary.usedCredits} 点，请求 ${summary.requestCount} 次${recentCost ? `。最近：${recentCost}` : '。'}`);
+      }
+      return summary;
+    } catch (error) {
+      console.error(error);
+      if (showNotice) {
+        setSetupError(error instanceof Error ? `用量加载失败：${error.message}` : '用量加载失败。');
+      }
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1385,17 +1405,21 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             });
         if (cancelled) return;
         setProject(nextProject);
-        const [canvas, conversation, nextTasks, nextAssets, restoredRuns] = await Promise.all([
+        const [canvas, conversation, nextTasks, nextAssets, restoredRuns, nextUsage] = await Promise.all([
           getCanvas(nextProject.canvasId),
           getConversation(nextProject.conversationId),
           listTasks(nextProject.id),
           listAssets(nextProject.id),
           listAgentRuns(nextProject.id).catch(() => []),
+          getMyUsage().catch(() => null),
         ]);
         if (cancelled) return;
         applyCanvas(canvas);
         setTasks(nextTasks.map(toTask));
         setAssets(nextAssets.map(toAsset));
+        if (nextUsage) {
+          setUsageSummary(nextUsage);
+        }
         const conversationMessages = conversation.messages.map(toMessage);
         const processMessages = restoredRuns.flatMap(processMessagesFromRun);
         const nextMessages = mergeRestoredMessages(conversationMessages, restoredRuns);
@@ -1734,8 +1758,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
       setActiveRunId(null);
+      void refreshUsageSummary(false);
     }
-  }, [updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
+  }, [refreshUsageSummary, updateNodeFromEvent, upsertEdge, upsertNode, upsertTask]);
 
   const runAgent = useCallback(async (message: string, options?: { mode?: string; nodeId?: string }) => {
     if (!message.trim()) return;
@@ -1801,6 +1826,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         }
         setRunStatus('success');
         setIsTyping(false);
+        void refreshUsageSummary(false);
         return;
       }
 
@@ -1884,8 +1910,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         timestamp: new Date(),
       }]);
       setIsTyping(false);
+      void refreshUsageSummary(false);
     }
-  }, [generationSettings, handleRunEvent, project, selectedImageModelId, selectedTextModelId, selectedVideoModelId, upsertNode]);
+  }, [generationSettings, handleRunEvent, project, refreshUsageSummary, selectedImageModelId, selectedTextModelId, selectedVideoModelId, upsertNode]);
 
   const handleConfirmRun = async () => {
     if (!activeRunId) return;
@@ -2098,17 +2125,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   };
 
   const handleOpenUsage = async () => {
-    try {
-      const summary = await getMyUsage();
-      setUsageSummary(summary);
-      const recentCost = summary.recentRecords.slice(0, 3)
-        .map((record) => `${capabilityLabel(record.capability)} ${record.credits} 点`)
-        .join('，');
-      setNotice(`剩余 ${summary.remainingCredits} 点，已用 ${summary.usedCredits} 点，请求 ${summary.requestCount} 次${recentCost ? `。最近：${recentCost}` : '。'}`);
-    } catch (error) {
-      console.error(error);
-      setSetupError(error instanceof Error ? `用量加载失败：${error.message}` : '用量加载失败。');
-    }
+    await refreshUsageSummary(true);
   };
 
   const handleOpenVideoTasks = () => {
@@ -2341,7 +2358,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                 <div className="w-3.5 h-3.5 rounded-full bg-brand flex items-center justify-center">
                   <Wand2 size={8} className="text-white" />
                 </div>
-                <span className="text-brand text-[12px] font-bold">{usageSummary?.remainingCredits ?? 1200}</span>
+                <span className="text-brand text-[12px] font-bold">{usageSummary?.remainingCredits ?? '--'}</span>
                 <Plus size={12} className="text-brand/80" />
              </button>
              

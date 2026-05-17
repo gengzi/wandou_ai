@@ -18,6 +18,10 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      max-file-size: ${WANDOU_AI_UPLOAD_MAX_FILE_SIZE:200MB}
+      max-request-size: ${WANDOU_AI_UPLOAD_MAX_REQUEST_SIZE:220MB}
 
 sa-token:
   token-name: Authorization

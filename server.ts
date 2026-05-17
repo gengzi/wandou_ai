@@ -60,6 +60,7 @@ async function startServer() {
         !value ||
         lowerKey === "host" ||
         lowerKey === "content-length" ||
+        lowerKey === "expect" ||
         lowerKey === "origin" ||
         lowerKey === "referer"
       ) {
@@ -69,11 +70,23 @@ async function startServer() {
     }
 
     try {
-      const upstream = await fetch(targetUrl, {
+      const hasRequestBody = req.method !== "GET" && req.method !== "HEAD";
+      const contentType = String(req.headers["content-type"] || "").toLowerCase();
+      const isJsonRequest = contentType.includes("application/json");
+      const upstreamOptions: RequestInit & { duplex?: "half" } = {
         method: req.method,
         headers,
-        body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(req.body ?? {}),
-      });
+      };
+      if (hasRequestBody) {
+        if (isJsonRequest) {
+          upstreamOptions.body = JSON.stringify(req.body ?? {});
+        } else {
+          upstreamOptions.body = req as any;
+          upstreamOptions.duplex = "half";
+        }
+      }
+
+      const upstream = await fetch(targetUrl, upstreamOptions);
 
       res.status(upstream.status);
       upstream.headers.forEach((value, key) => {
