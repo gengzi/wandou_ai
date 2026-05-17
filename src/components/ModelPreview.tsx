@@ -8,15 +8,22 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 interface ModelPreviewProps {
   url: string;
   name: string;
+  filename?: string;
 }
 
-const supportedModelUrl = (url: string) => /\.(glb|gltf|obj|stl)(\?|$)/i.test(url);
+const modelFormat = (url: string, filename?: string) => {
+  const source = `${filename || ''} ${url || ''}`.toLowerCase();
+  if (source.match(/\.(glb|gltf)(\?|$|\s)/)) return 'gltf';
+  if (source.match(/\.obj(\?|$|\s)/)) return 'obj';
+  if (source.match(/\.stl(\?|$|\s)/)) return 'stl';
+  return '';
+};
 
-export function canPreviewModel(url: string) {
-  return Boolean(url) && supportedModelUrl(url);
+export function canPreviewModel(url: string, filename?: string) {
+  return Boolean(url) && Boolean(modelFormat(url, filename));
 }
 
-export default function ModelPreview({ url, name }: ModelPreviewProps) {
+export default function ModelPreview({ url, name, filename }: ModelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const resetRef = useRef<() => void>(() => undefined);
   const [status, setStatus] = useState('加载中...');
@@ -24,7 +31,8 @@ export default function ModelPreview({ url, name }: ModelPreviewProps) {
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !url || !supportedModelUrl(url)) {
+    const format = modelFormat(url, filename);
+    if (!container || !url || !format) {
       setStatus('');
       setError(url ? '暂不支持该模型格式预览' : '模型文件待上传');
       return undefined;
@@ -110,12 +118,11 @@ export default function ModelPreview({ url, name }: ModelPreviewProps) {
       setError(loadError instanceof Error ? loadError.message : '模型加载失败');
     };
 
-    const lowerUrl = url.split('?')[0].toLowerCase();
-    if (lowerUrl.endsWith('.glb') || lowerUrl.endsWith('.gltf')) {
+    if (format === 'gltf') {
       new GLTFLoader().load(url, (gltf) => addModel(gltf.scene), undefined, handleLoadError);
-    } else if (lowerUrl.endsWith('.obj')) {
+    } else if (format === 'obj') {
       new OBJLoader().load(url, addModel, undefined, handleLoadError);
-    } else if (lowerUrl.endsWith('.stl')) {
+    } else if (format === 'stl') {
       new STLLoader().load(url, (geometry) => {
         geometry.computeVertexNormals();
         addModel(new THREE.Mesh(geometry, material));
@@ -150,7 +157,7 @@ export default function ModelPreview({ url, name }: ModelPreviewProps) {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [url]);
+  }, [filename, url]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-black/30">

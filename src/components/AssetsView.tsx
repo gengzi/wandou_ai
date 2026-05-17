@@ -678,12 +678,15 @@ export default function AssetsView() {
 
   const selectedAssetUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.url) : '';
   const selectedAssetThumbnailUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.thumbnailUrl || selectedAsset.url) : '';
+  const selectedAssetFilename = selectedAsset
+    ? String(selectedAsset.metadata?.filename || selectedAsset.name || '')
+    : '';
   const selectedAssetCanDerive = Boolean(selectedAsset && (
     selectedAsset.type === 'character'
     || selectedAsset.purpose === 'character_reference'
     || selectedAsset.purpose === 'reference_image'
   ));
-  const selectedAssetCanPreviewModel = Boolean(selectedAsset?.type === 'model' && canPreviewModel(selectedAssetUrl));
+  const selectedAssetCanPreviewModel = Boolean(selectedAsset?.type === 'model' && canPreviewModel(selectedAssetUrl, selectedAssetFilename));
 
   return (
     <div className="h-full overflow-y-auto bg-bg-dark text-slate-300">
@@ -1153,7 +1156,7 @@ export default function AssetsView() {
             {(selectedAssetCanPreviewModel || selectedAssetThumbnailUrl || selectedAssetUrl) && (
               <div className="aspect-video overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 {selectedAssetCanPreviewModel ? (
-                  <ModelPreview url={selectedAssetUrl} name={selectedAsset.name} />
+                  <ModelPreview url={selectedAssetUrl} name={selectedAsset.name} filename={selectedAssetFilename} />
                 ) : selectedAsset.type === 'video' ? (
                   <video src={selectedAssetUrl} poster={selectedAssetThumbnailUrl || undefined} controls className="h-full w-full object-cover" />
                 ) : (
