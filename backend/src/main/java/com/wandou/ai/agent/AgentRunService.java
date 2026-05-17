@@ -247,7 +247,17 @@ public class AgentRunService {
             }
 
             VideoAgentRuntime.VideoAgentRunListener listener = listenerFor(run, request);
-            String configuredPrompt = withGenerationSettings(request.message(), request);
+            AssetService.AttachmentContext attachmentContext = assetService.attachmentContext(run.projectId, request.attachmentIds(), 6);
+            List<ReferenceAsset> referenceAssets = referenceAssets(attachmentContext.referenceImages());
+            String attachmentPrompt = promptWithAttachmentContext(request.message(), attachmentContext);
+            if (attachmentContext.hasScript() || !referenceAssets.isEmpty() || !attachmentContext.failedScripts().isEmpty()) {
+                publish(runId, "message.delta", Map.of(
+                        "role", "assistant",
+                        "sender", run.agentName,
+                        "content", attachmentContextMessage(attachmentContext)
+                ));
+            }
+            String configuredPrompt = withGenerationSettings(attachmentPrompt, request);
             VideoAgentRuntime.VideoAgentOutputs planOutputs = videoAgentRuntime.plan(run.userId, configuredPrompt, listener, request.textModelConfigId(), usageContext(run, null, "agent.plan"));
             VideoAgentOutput scriptOutput = planOutputs.require(VideoAgentStep.SCRIPT);
 
@@ -259,20 +269,20 @@ public class AgentRunService {
             ));
 
             CanvasNodeResponse scriptNode = updateNode(run, "script-1", "running", Map.of(
-                    "prompt", request.message(),
+                    "prompt", attachmentPrompt,
                     "agentName", run.agentName,
                     "step", "script"
             ));
             CanvasNodeResponse updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", normalizedStepOutput(scriptOutput.output(), request, "script"));
             publishNodeUpdated(run, updatedScriptNode);
-            List<ReferenceAsset> referenceAssets = referenceAssets(run.projectId);
-            if (!referenceAssets.isEmpty()) {
+            if (!referenceAssets.isEmpty() || attachmentContext.hasScript() || !attachmentContext.failedScripts().isEmpty()) {
                 Map<String, Object> scriptWithReferences = new java.util.LinkedHashMap<>(updatedScriptNode.output());
                 scriptWithReferences.put("referenceAssets", referenceAssetOutput(referenceAssets));
+                scriptWithReferences.put("attachmentContext", attachmentContextOutput(attachmentContext));
                 updatedScriptNode = canvasService.updateNode(run.canvasId, scriptNode.id(), "success", scriptWithReferences);
                 publishNodeUpdated(run, updatedScriptNode);
             }
-            waitForConfirmation(run, "script", scriptConfirmationMessage(referenceAssets));
+            waitForConfirmation(run, "script", scriptConfirmationMessage(attachmentContext));
             String approvedBrief = approvedScriptBrief(configuredPrompt, updatedScriptNode.output(), run.confirmationComment, referenceAssets);
 
             VideoAgentRuntime.VideoAgentOutputs designOutputs = videoAgentRuntime.design(run.userId, approvedBrief, listener, request.textModelConfigId(), usageContext(run, null, "agent.design"));
@@ -456,7 +466,7 @@ public class AgentRunService {
                         "",
                         stringValue(firstFrame.output(), "thumbnailUrl", stringValue(lastFrame.output(), "thumbnailUrl", stringValue(shotVisualOutput.output(), "thumbnailUrl", "")))
                 );
-        TaskResponse completedTask = taskService.update(task.id(), "success", 100, hasVideoBytes ? "视频片段生成完成" : "视频模型暂不可用，已生成可追踪占位片段");
+        TaskResponse completedTask = taskService.update(task.id(), "success", 100, hasVideoBytes ? "视频片段生成完成" : "视频模型暂不可用，已生成可追踪占位结果");
         publish(run.runId, "asset.created", Map.of("asset", asset));
         publish(run.runId, "task.completed", Map.of("task", completedTask));
 
@@ -609,10 +619,13 @@ public class AgentRunService {
             List<ReferenceAsset> referenceAssets
     ) {
         String providerJobId;
-        String prompt = withReferenceBrief(stringValue(visualOutput.output(), "content", request.message()), referenceAssets);
+        String prompt = withReferenceBrief(withOriginalRequest(
+                stringValue(visualOutput.output(), "content", request.message()),
+                request.message()
+        ), referenceAssets);
         String firstFramePrompt = stringValue(visualOutput.output(), "firstFramePrompt", "");
         String lastFramePrompt = stringValue(visualOutput.output(), "lastFramePrompt", "");
-        String keyframePrompt = withReferenceBrief("""
+        String keyframePrompt = withReferenceBrief(withOriginalRequest("""
                 %s
 
                 首帧：%s
@@ -622,7 +635,7 @@ public class AgentRunService {
                 stringValue(visualOutput.output(), "prompt", request.message()),
                 firstFramePrompt.isBlank() ? "沿用分镜首帧设定" : firstFramePrompt,
                 lastFramePrompt.isBlank() ? "沿用分镜尾帧设定" : lastFramePrompt
-        ).trim(), referenceAssets);
+        ).trim(), request.message()), referenceAssets);
         try {
             providerJobId = videoGenerationProvider.submit(new VideoGenerationRequest(
                     run.userId,
@@ -1399,7 +1412,11 @@ public class AgentRunService {
     }
 
     private List<ReferenceAsset> referenceAssets(String projectId) {
-        return assetService.listReferenceImages(projectId, 6).stream()
+        return referenceAssets(assetService.listReferenceImages(projectId, 6));
+    }
+
+    private List<ReferenceAsset> referenceAssets(List<AssetResponse> assets) {
+        return assets.stream()
                 .map(asset -> new ReferenceAsset(
                         asset.id(),
                         asset.name(),
@@ -1410,11 +1427,59 @@ public class AgentRunService {
                 .toList();
     }
 
-    private String scriptConfirmationMessage(List<ReferenceAsset> referenceAssets) {
-        if (referenceAssets.isEmpty()) {
+    private String scriptConfirmationMessage(AssetService.AttachmentContext attachmentContext) {
+        List<ReferenceAsset> referenceAssets = referenceAssets(attachmentContext.referenceImages());
+        if (!attachmentContext.hasScript() && referenceAssets.isEmpty() && attachmentContext.failedScripts().isEmpty()) {
             return "剧本草稿已生成，请确认后继续角色、分镜和关键帧设计。";
         }
-        return "剧本草稿已生成。已检测到 " + referenceAssets.size() + " 张项目参考图，确认后会优先参考这些角色/风格图片继续角色、分镜和关键帧设计。";
+        StringBuilder message = new StringBuilder("剧本草稿已生成。");
+        if (attachmentContext.hasScript()) {
+            message.append("已读取剧本《").append(attachmentContext.scriptName()).append("》。");
+        }
+        if (!referenceAssets.isEmpty()) {
+            message.append("已检测到 ").append(referenceAssets.size()).append(" 张项目参考图，确认后会优先参考这些角色/风格图片继续角色、分镜和关键帧设计。");
+        }
+        if (!attachmentContext.failedScripts().isEmpty()) {
+            message.append("另有 ").append(attachmentContext.failedScripts().size()).append(" 个剧本文档解析失败，已跳过。");
+        }
+        return message.toString();
+    }
+
+    private static String promptWithAttachmentContext(String userMessage, AssetService.AttachmentContext attachmentContext) {
+        StringBuilder prompt = new StringBuilder();
+        if (attachmentContext.hasScript()) {
+            prompt.append("用户上传的剧本文档《").append(attachmentContext.scriptName()).append("》内容如下，请作为主要故事来源，不要忽略：\n");
+            prompt.append(attachmentContext.scriptText()).append("\n\n");
+            if (userMessage != null && !userMessage.isBlank()) {
+                prompt.append("用户本次补充要求：").append(userMessage.trim()).append("\n");
+            }
+            return prompt.toString().trim();
+        }
+        return userMessage == null ? "" : userMessage;
+    }
+
+    private static String attachmentContextMessage(AssetService.AttachmentContext attachmentContext) {
+        StringBuilder message = new StringBuilder("已读取项目附件：");
+        if (attachmentContext.hasScript()) {
+            message.append("\n- 剧本：").append(attachmentContext.scriptName());
+        }
+        if (!attachmentContext.referenceImages().isEmpty()) {
+            message.append("\n- 参考图：").append(attachmentContext.referenceImages().size()).append(" 张");
+        }
+        if (!attachmentContext.failedScripts().isEmpty()) {
+            message.append("\n- 解析失败：").append(attachmentContext.failedScripts().size()).append(" 个剧本文档，本次不会使用");
+        }
+        return message.toString();
+    }
+
+    private static Map<String, Object> attachmentContextOutput(AssetService.AttachmentContext attachmentContext) {
+        return Map.of(
+                "scriptAssetId", attachmentContext.scriptAssetId(),
+                "scriptName", attachmentContext.scriptName(),
+                "scriptSummary", attachmentContext.scriptSummary() == null ? "" : attachmentContext.scriptSummary(),
+                "referenceImageCount", attachmentContext.referenceImages().size(),
+                "failedScriptCount", attachmentContext.failedScripts().size()
+        );
     }
 
     private static String approvedScriptBrief(String originalPrompt, Map<String, Object> scriptOutput, String confirmationComment, List<ReferenceAsset> referenceAssets) {
@@ -1457,6 +1522,17 @@ public class AgentRunService {
                     .append("（assetId=").append(asset.id()).append("）");
         }
         return brief.toString();
+    }
+
+    private static String withOriginalRequest(String prompt, String originalRequest) {
+        if (originalRequest == null || originalRequest.isBlank()) {
+            return prompt;
+        }
+        String safePrompt = prompt == null ? "" : prompt;
+        if (safePrompt.contains(originalRequest)) {
+            return safePrompt;
+        }
+        return (safePrompt + "\n\n原始用户需求：" + originalRequest).trim();
     }
 
     private static List<Map<String, Object>> referenceAssetOutput(List<ReferenceAsset> referenceAssets) {

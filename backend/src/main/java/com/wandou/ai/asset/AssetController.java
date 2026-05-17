@@ -68,9 +68,10 @@ public class AssetController {
             @RequestParam(required = false) String nodeId,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String name,
+            @RequestParam(required = false) String purpose,
             @RequestParam("file") MultipartFile file
     ) {
-        return ApiResponse.ok(assetService.upload(projectId, canvasId, nodeId, type, name, file));
+        return ApiResponse.ok(assetService.upload(projectId, canvasId, nodeId, type, name, purpose, file));
     }
 
     @PostMapping("/import-external")

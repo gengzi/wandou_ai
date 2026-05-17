@@ -11,7 +11,7 @@ import BackgroundStars from './components/BackgroundStars.tsx';
 import LoginView from './components/LoginView.tsx';
 import AppLoadingView from './components/AppLoadingView.tsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, logout, UserResponse } from './lib/api.ts';
+import { AUTH_SESSION_EXPIRED_EVENT, clearAuthToken, getAuthToken, getCurrentUser, LoginResponse, logout, UserResponse } from './lib/api.ts';
 import { useI18n } from './lib/i18n.tsx';
 
 export default function App() {
@@ -44,6 +44,18 @@ export default function App() {
       .catch(() => clearAuthToken())
       .finally(() => setCheckingSession(false));
   }, [publicReplayProjectId]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setCurrentUser(null);
+      setView('home');
+      setWorkspaceProjectId(undefined);
+      setInitialPrompt('');
+    };
+
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, []);
 
   const openWorkspace = (prompt?: string, projectId?: string) => {
     if (prompt?.trim()) {

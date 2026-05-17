@@ -1,5 +1,6 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const AUTH_TOKEN_KEY = 'wandou.auth.token';
+export const AUTH_SESSION_EXPIRED_EVENT = 'wandou.auth.sessionExpired';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -142,6 +143,11 @@ export interface AssetResponse {
   name: string;
   url: string;
   thumbnailUrl: string;
+  purpose: string;
+  parseStatus: string;
+  parsedSummary?: string;
+  parseError?: string;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -287,6 +293,14 @@ export interface GenerationResponse {
   metadata: Record<string, unknown>;
 }
 
+export interface DerivativeResponse {
+  kind: 'tshirt_print' | 'sticker_set' | 'model_preview';
+  asset: AssetResponse;
+  mockupAsset?: AssetResponse;
+  printAsset?: AssetResponse;
+  node?: CanvasNodeResponse;
+}
+
 export function getAuthToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
@@ -297,6 +311,11 @@ export function setAuthToken(token: string): void {
 
 export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function notifySessionExpired(): void {
+  clearAuthToken();
+  window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT));
 }
 
 function authHeaders(headers?: HeadersInit): Headers {
@@ -322,6 +341,9 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     headers: authHeaders(options?.headers),
   });
   if (!response.ok) {
+    if (response.status === 401 && !url.includes('/api/auth/login')) {
+      notifySessionExpired();
+    }
     throw new Error(await responseErrorMessage(response));
   }
 
@@ -587,6 +609,7 @@ export async function createAsset(payload: {
   name: string;
   url: string;
   thumbnailUrl?: string;
+  purpose?: string;
 }): Promise<AssetResponse> {
   return requestJson<AssetResponse>('/api/assets', {
     method: 'POST',
@@ -603,6 +626,7 @@ export async function updateAsset(assetId: string, payload: {
   name: string;
   url: string;
   thumbnailUrl?: string;
+  purpose?: string;
 }): Promise<AssetResponse> {
   return requestJson<AssetResponse>(`/api/assets/${assetId}`, {
     method: 'PATCH',
@@ -623,6 +647,7 @@ export async function uploadAsset(payload: {
   nodeId?: string;
   type?: string;
   name?: string;
+  purpose?: string;
   file: File;
 }): Promise<AssetResponse> {
   const formData = new FormData();
@@ -632,9 +657,23 @@ export async function uploadAsset(payload: {
   if (payload.nodeId) formData.set('nodeId', payload.nodeId);
   if (payload.type) formData.set('type', payload.type);
   if (payload.name) formData.set('name', payload.name);
+  if (payload.purpose) formData.set('purpose', payload.purpose);
   return requestJson<AssetResponse>('/api/assets/upload', {
     method: 'POST',
     body: formData,
+  });
+}
+
+export async function createDerivative(payload: {
+  sourceAssetId: string;
+  kind: 'tshirt_print' | 'sticker_set' | 'model_preview';
+  prompt?: string;
+  settings?: Record<string, unknown>;
+}): Promise<DerivativeResponse> {
+  return requestJson<DerivativeResponse>('/api/derivatives', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
 }
 
@@ -701,6 +740,7 @@ export async function startAgentRun(payload: {
   durationSeconds?: number;
   audioEnabled?: boolean;
   multiCameraEnabled?: boolean;
+  attachmentIds?: string[];
 }): Promise<AgentRunResponse> {
   return requestJson<AgentRunResponse>('/api/agent/runs', {
     method: 'POST',

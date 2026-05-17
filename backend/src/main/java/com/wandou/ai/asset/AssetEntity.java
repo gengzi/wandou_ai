@@ -53,6 +53,24 @@ public class AssetEntity {
     @Column(nullable = false)
     private String status;
 
+    @Column(nullable = false)
+    private String purpose = "library_asset";
+
+    @Column(name = "parse_status", nullable = false)
+    private String parseStatus = "not_required";
+
+    @Column(name = "parsed_text")
+    private String parsedText;
+
+    @Column(name = "parsed_summary")
+    private String parsedSummary;
+
+    @Column(name = "parse_error")
+    private String parseError;
+
+    @Column(name = "metadata_json")
+    private String metadataJson;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -149,11 +167,35 @@ public class AssetEntity {
         return status;
     }
 
+    public String purpose() {
+        return purpose;
+    }
+
+    public String parseStatus() {
+        return parseStatus;
+    }
+
+    public String parsedText() {
+        return parsedText;
+    }
+
+    public String parsedSummary() {
+        return parsedSummary;
+    }
+
+    public String parseError() {
+        return parseError;
+    }
+
+    public String metadataJson() {
+        return metadataJson;
+    }
+
     public Instant createdAt() {
         return createdAt;
     }
 
-    public void updateDetails(String projectId, String canvasId, String nodeId, String type, String name, String url, String thumbnailUrl) {
+    public void updateDetails(String projectId, String canvasId, String nodeId, String type, String name, String url, String thumbnailUrl, String purpose) {
         this.projectId = projectId;
         this.canvasId = canvasId;
         this.nodeId = nodeId;
@@ -161,5 +203,21 @@ public class AssetEntity {
         this.name = name;
         this.url = url;
         this.thumbnailUrl = thumbnailUrl;
+        if (purpose != null && !purpose.isBlank()) {
+            this.purpose = purpose;
+        }
+    }
+
+    public void updateAttachmentContext(String purpose, String parseStatus, String parsedText, String parsedSummary, String parseError, String metadataJson) {
+        if (purpose != null && !purpose.isBlank()) {
+            this.purpose = purpose;
+        }
+        if (parseStatus != null && !parseStatus.isBlank()) {
+            this.parseStatus = parseStatus;
+        }
+        this.parsedText = parsedText;
+        this.parsedSummary = parsedSummary;
+        this.parseError = parseError;
+        this.metadataJson = metadataJson;
     }
 }

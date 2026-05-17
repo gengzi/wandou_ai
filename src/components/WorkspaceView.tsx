@@ -319,6 +319,10 @@ interface AssetItem {
   name: string;
   url: string;
   thumbnailUrl: string;
+  purpose: string;
+  parseStatus: string;
+  parsedSummary?: string;
+  parseError?: string;
 }
 
 interface ChatModelSelectProps {
@@ -917,6 +921,10 @@ function toAsset(asset: AssetResponse): AssetItem {
     name: asset.name,
     url: asset.url,
     thumbnailUrl: asset.thumbnailUrl,
+    purpose: asset.purpose || 'library_asset',
+    parseStatus: asset.parseStatus || 'not_required',
+    parsedSummary: asset.parsedSummary,
+    parseError: asset.parseError,
   };
 }
 
@@ -1018,6 +1026,29 @@ function looksLikeQuickVideoCommand(message: string): boolean {
   return ['快速视频', '快速生成视频', '只生成视频', 'mock视频', 'mock video'].some((keyword) => message.toLowerCase().includes(keyword));
 }
 
+function scriptFilePurpose(file: File): 'script_source' | 'reference_image' | 'library_asset' {
+  const name = file.name.toLowerCase();
+  if (file.type.startsWith('image/')) return 'reference_image';
+  if (file.type.startsWith('text/') || ['.txt', '.md', '.pdf', '.docx'].some((extension) => name.endsWith(extension))) {
+    return 'script_source';
+  }
+  return 'library_asset';
+}
+
+function attachmentPurposeLabel(purpose: string) {
+  if (purpose === 'script_source') return '剧本来源';
+  if (purpose === 'reference_image') return '参考图';
+  return '普通素材';
+}
+
+function attachmentParseLabel(asset: AssetItem) {
+  if (asset.purpose !== 'script_source') return '';
+  if (asset.parseStatus === 'parsed') return '已解析';
+  if (asset.parseStatus === 'failed') return '解析失败';
+  if (asset.parseStatus === 'pending') return '等待解析';
+  return '未解析';
+}
+
 export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -1025,6 +1056,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [excludedAttachmentIds, setExcludedAttachmentIds] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<Message[]>([]);
   const [restoredContext, setRestoredContext] = useState<RestoredProjectContext | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -1079,6 +1111,12 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const enabledTextModels = modelConfigs.filter((config) => config.enabled && config.capability === 'text');
   const enabledImageModels = modelConfigs.filter((config) => config.enabled && config.capability === 'image');
   const enabledVideoModels = modelConfigs.filter((config) => config.enabled && config.capability === 'video');
+  const attachmentAssets = useMemo(() => assets.filter((asset) => (
+    asset.purpose === 'script_source' || asset.purpose === 'reference_image'
+  )), [assets]);
+  const activeAttachmentAssets = useMemo(() => attachmentAssets.filter((asset) => !excludedAttachmentIds.has(asset.id)), [attachmentAssets, excludedAttachmentIds]);
+  const activeScriptAssets = activeAttachmentAssets.filter((asset) => asset.purpose === 'script_source');
+  const activeReferenceAssets = activeAttachmentAssets.filter((asset) => asset.purpose === 'reference_image');
   const runningTaskCount = tasks.filter(task => task.status === 'running').length;
   const confirmationReferenceAssets = confirmation ? assets
     .filter((asset) => asset.type === 'image')
@@ -1834,6 +1872,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       processedEventIdsRef.current = new Set();
       stepOutputsRef.current = {};
       setStepOutputs({});
+      const attachmentIds = activeAttachmentAssets.map((asset) => asset.id);
+      const shouldConstrainAttachments = excludedAttachmentIds.size > 0 || attachmentIds.length > 0;
       const run = await startAgentRun({
         projectId: project.id,
         conversationId: project.conversationId,
@@ -1845,6 +1885,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         textModelConfigId: selectedTextModelId || undefined,
         imageModelConfigId: selectedImageModelId || undefined,
         videoModelConfigId: selectedVideoModelId || undefined,
+        attachmentIds: shouldConstrainAttachments ? (attachmentIds.length > 0 ? attachmentIds : ['__none__']) : undefined,
         ...generationSettings,
       });
 
@@ -1912,7 +1953,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       setIsTyping(false);
       void refreshUsageSummary(false);
     }
-  }, [generationSettings, handleRunEvent, project, refreshUsageSummary, selectedImageModelId, selectedTextModelId, selectedVideoModelId, upsertNode]);
+  }, [activeAttachmentAssets, excludedAttachmentIds, generationSettings, handleRunEvent, project, refreshUsageSummary, selectedImageModelId, selectedTextModelId, selectedVideoModelId, upsertNode]);
 
   const handleConfirmRun = async () => {
     if (!activeRunId) return;
@@ -1998,7 +2039,10 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !project) return;
-    const type = file.type.startsWith('image/')
+    const purpose = scriptFilePurpose(file);
+    const type = purpose === 'script_source'
+      ? 'file'
+      : file.type.startsWith('image/')
       ? 'image'
       : file.type.startsWith('video/')
         ? 'video'
@@ -2013,15 +2057,28 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         nodeId: selectedNode?.id,
         type,
         name: file.name,
+        purpose,
         file,
       });
       const asset = toAsset(uploaded);
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      setExcludedAttachmentIds((current) => {
+        const next = new Set(current);
+        next.delete(asset.id);
+        return next;
+      });
+      const parseText = asset.purpose === 'script_source'
+        ? asset.parseStatus === 'parsed'
+          ? `剧本文档已解析，将作为下一次 Agent 视频流程的主要故事来源。${asset.parsedSummary ? `\n摘要：${asset.parsedSummary}` : ''}`
+          : `剧本文档已保存，但解析失败：${asset.parseError || '未知错误'}。本次不会使用该剧本内容。`
+        : asset.purpose === 'reference_image'
+          ? '参考图已保存，后续角色、分镜和关键帧会优先参考它。'
+          : '素材已保存到项目素材库。';
       setMessages((current) => [...current, {
         id: `asset-upload-${asset.id}`,
         sender: '系统',
         role: 'agent',
-        content: `${type === 'image' ? '参考图' : '素材'}已上传并保存到对象存储，后续智能体流程会把它作为项目上下文使用。`,
+        content: `附件已上传：${asset.name}\n用途：${attachmentPurposeLabel(asset.purpose)}${attachmentParseLabel(asset) ? ` · ${attachmentParseLabel(asset)}` : ''}\n${parseText}`,
         timestamp: new Date(),
         media: type === 'image' || type === 'video'
           ? {
@@ -2032,7 +2089,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             }
           : undefined,
       }]);
-      setNotice(`${file.name} 已上传为项目${type === 'image' ? '参考图' : '素材'}。`);
+      setNotice(`${file.name} 已上传为${attachmentPurposeLabel(asset.purpose)}。`);
     } catch (error) {
       console.error(error);
       setSetupError(error instanceof Error ? `上传失败：${error.message}` : '上传失败，请稍后重试。');
@@ -2522,6 +2579,58 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
           
           {/* Chat Input */}
             <div className="wandou-chat-input-shell p-4 border-t border-white/5 bg-[#151516]">
+            {attachmentAssets.length > 0 && (
+              <div className="mb-3 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-bold text-slate-300">
+                    本次会使用：剧本 {activeScriptAssets.filter((asset) => asset.parseStatus === 'parsed').length} 个 · 参考图 {activeReferenceAssets.length} 张
+                  </div>
+                  {excludedAttachmentIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExcludedAttachmentIds(new Set())}
+                      className="text-[10px] font-medium text-brand hover:text-brand/80"
+                    >
+                      全部启用
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {attachmentAssets.slice(0, 8).map((asset) => {
+                    const disabled = excludedAttachmentIds.has(asset.id);
+                    const parseLabel = attachmentParseLabel(asset);
+                    return (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        onClick={() => setExcludedAttachmentIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(asset.id)) {
+                            next.delete(asset.id);
+                          } else {
+                            next.add(asset.id);
+                          }
+                          return next;
+                        })}
+                        className={`max-w-[220px] truncate rounded-xl border px-3 py-2 text-left text-[11px] transition-colors ${
+                          disabled
+                            ? 'border-white/[0.06] bg-white/[0.02] text-slate-600 line-through'
+                            : asset.purpose === 'script_source' && asset.parseStatus === 'failed'
+                              ? 'border-red-400/25 bg-red-500/10 text-red-100'
+                              : 'border-brand/20 bg-brand/10 text-slate-200 hover:border-brand/35'
+                        }`}
+                        title={disabled ? '点击启用附件' : '点击本次不使用该附件'}
+                      >
+                        <span className="font-semibold">{attachmentPurposeLabel(asset.purpose)}</span>
+                        <span className="mx-1 text-slate-500">·</span>
+                        <span>{asset.name}</span>
+                        {parseLabel && <span className="ml-1 text-slate-500">({parseLabel})</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {(activeRunId || confirmation) && (
               <div className="mb-3 space-y-2">
                 {confirmation && confirmationReferenceAssets.length > 0 && (
@@ -2594,7 +2703,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
             )}
             <div className="wandou-chat-composer rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_24%_0%,rgba(16,185,129,0.10),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(26,26,28,0.96))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors focus-within:border-brand/40">
-              <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleAssetUpload} />
+              <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.txt,.md,.pdf,.docx" className="hidden" onChange={handleAssetUpload} />
               <div className="flex items-start gap-2">
                 <button
                   onClick={() => openFilePicker(false)}
@@ -2965,7 +3074,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
             <div className="absolute bottom-4 left-4 right-4 z-30 lg:hidden">
               <div className="wandou-mobile-chat-composer flex items-center gap-2 rounded-[22px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(18,18,19,0.96))] px-2 py-2 shadow-2xl backdrop-blur">
-                <input ref={mobileFileInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleAssetUpload} />
+                <input ref={mobileFileInputRef} type="file" accept="image/*,video/*,audio/*,.txt,.md,.pdf,.docx" className="hidden" onChange={handleAssetUpload} />
                 <button onClick={() => openFilePicker(true)} disabled={!project || isUploadingAsset} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/[0.04] text-slate-400 disabled:cursor-not-allowed disabled:opacity-40">
                   <ImagePlus size={16} />
                 </button>

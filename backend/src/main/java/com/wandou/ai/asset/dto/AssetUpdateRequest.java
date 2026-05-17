@@ -9,6 +9,7 @@ public record AssetUpdateRequest(
         @NotBlank String type,
         @NotBlank String name,
         @NotBlank String url,
-        String thumbnailUrl
+        String thumbnailUrl,
+        String purpose
 ) {
 }

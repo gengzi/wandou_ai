@@ -9,6 +9,8 @@ import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.storage.StoredObject;
 import com.wandou.ai.storage.StoredObjectMetadata;
 import com.wandou.ai.storage.VideoStorageService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,7 +26,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class AssetService {
@@ -32,11 +36,21 @@ public class AssetService {
     private final AssetRepository assetRepository;
     private final VideoStorageService videoStorageService;
     private final RestClient.Builder restClientBuilder;
+    private final AssetParseService assetParseService;
+    private final ObjectMapper objectMapper;
 
-    public AssetService(AssetRepository assetRepository, VideoStorageService videoStorageService, RestClient.Builder restClientBuilder) {
+    public AssetService(
+            AssetRepository assetRepository,
+            VideoStorageService videoStorageService,
+            RestClient.Builder restClientBuilder,
+            AssetParseService assetParseService,
+            ObjectMapper objectMapper
+    ) {
         this.assetRepository = assetRepository;
         this.videoStorageService = videoStorageService;
         this.restClientBuilder = restClientBuilder;
+        this.assetParseService = assetParseService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -49,7 +63,37 @@ public class AssetService {
             String url,
             String thumbnailUrl
     ) {
+        return create(projectId, canvasId, nodeId, type, name, url, thumbnailUrl, null);
+    }
+
+    @Transactional
+    public AssetResponse create(
+            String projectId,
+            String canvasId,
+            String nodeId,
+            String type,
+            String name,
+            String url,
+            String thumbnailUrl,
+            String purpose
+    ) {
+        return create(projectId, canvasId, nodeId, type, name, url, thumbnailUrl, purpose, Map.of());
+    }
+
+    @Transactional
+    public AssetResponse create(
+            String projectId,
+            String canvasId,
+            String nodeId,
+            String type,
+            String name,
+            String url,
+            String thumbnailUrl,
+            String purpose,
+            Map<String, Object> metadata
+    ) {
         String safeType = safeAssetType(type);
+        String safePurpose = resolvePurpose(purpose, safeType, name, null);
         String assetId = IdGenerator.id("asset_" + safeType + "_");
         AssetEntity asset = new AssetEntity(
                 assetId,
@@ -68,6 +112,7 @@ public class AssetService {
                 "ready",
                 Instant.now()
         );
+        asset.updateAttachmentContext(safePurpose, "script_source".equals(safePurpose) ? "pending" : "not_required", null, null, null, metadataJson(name, null, null, metadata));
         return toResponse(assetRepository.save(asset));
     }
 
@@ -105,6 +150,7 @@ public class AssetService {
                 "ready",
                 Instant.now()
         );
+        asset.updateAttachmentContext("library_asset", "not_required", null, null, null, metadataJson(name, videoContentType, (long) videoBytes.length));
         return toResponse(assetRepository.save(asset));
     }
 
@@ -119,7 +165,39 @@ public class AssetService {
             String contentType,
             String extension
     ) {
+        return createStoredAsset(projectId, canvasId, nodeId, type, name, bytes, contentType, extension, null);
+    }
+
+    @Transactional
+    public AssetResponse createStoredAsset(
+            String projectId,
+            String canvasId,
+            String nodeId,
+            String type,
+            String name,
+            byte[] bytes,
+            String contentType,
+            String extension,
+            String purpose
+    ) {
+        return createStoredAsset(projectId, canvasId, nodeId, type, name, bytes, contentType, extension, purpose, Map.of());
+    }
+
+    @Transactional
+    public AssetResponse createStoredAsset(
+            String projectId,
+            String canvasId,
+            String nodeId,
+            String type,
+            String name,
+            byte[] bytes,
+            String contentType,
+            String extension,
+            String purpose,
+            Map<String, Object> metadata
+    ) {
         String safeType = safeAssetType(type);
+        String safePurpose = resolvePurpose(purpose, safeType, name, contentType);
         String assetId = IdGenerator.id("asset_" + safeType + "_");
         String safeExtension = extension == null || extension.isBlank() ? "bin" : extension.replaceAll("^\\.+", "");
         String prefix = "projects/" + normalize(projectId) + "/assets/" + assetId;
@@ -141,6 +219,7 @@ public class AssetService {
                 "ready",
                 Instant.now()
         );
+        applyParseResult(asset, assetParseService.parse(name, contentType, safePurpose, bytes), safePurpose, name, contentType, bytes == null ? null : (long) bytes.length, metadata);
         return toResponse(assetRepository.save(asset));
     }
 
@@ -151,6 +230,7 @@ public class AssetService {
             String nodeId,
             String type,
             String name,
+            String purpose,
             MultipartFile file
     ) {
         if (file == null || file.isEmpty()) {
@@ -173,7 +253,8 @@ public class AssetService {
                     assetName,
                     file.getBytes(),
                     contentType,
-                    extension(originalName, contentType)
+                    extension(originalName, contentType),
+                    resolvePurpose(purpose, safeType, originalName, contentType)
             );
         } catch (IOException error) {
             throw new IllegalStateException("读取上传文件失败", error);
@@ -213,10 +294,37 @@ public class AssetService {
     @Transactional(readOnly = true)
     public List<AssetResponse> listReferenceImages(String projectId, int limit) {
         int safeLimit = limit <= 0 ? 6 : limit;
-        return list(projectId).stream()
-                .filter(asset -> "image".equalsIgnoreCase(asset.type()))
+        return assetRepository.findByProjectIdAndPurposeOrderByCreatedAtDesc(normalize(projectId), "reference_image").stream()
                 .limit(safeLimit)
+                .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentContext attachmentContext(String projectId, List<String> attachmentIds, int referenceImageLimit) {
+        List<AssetEntity> candidates = selectedAttachmentEntities(projectId, attachmentIds);
+        Optional<AssetEntity> script = candidates.stream()
+                .filter(asset -> "script_source".equals(asset.purpose()))
+                .filter(asset -> "parsed".equals(asset.parseStatus()))
+                .findFirst();
+        List<AssetResponse> referenceImages = candidates.stream()
+                .filter(asset -> "reference_image".equals(asset.purpose()))
+                .limit(referenceImageLimit <= 0 ? 6 : referenceImageLimit)
+                .map(this::toResponse)
+                .toList();
+        List<AssetResponse> failedScripts = candidates.stream()
+                .filter(asset -> "script_source".equals(asset.purpose()))
+                .filter(asset -> "failed".equals(asset.parseStatus()))
+                .map(this::toResponse)
+                .toList();
+        return new AttachmentContext(
+                script.map(AssetEntity::id).orElse(""),
+                script.map(AssetEntity::name).orElse(""),
+                script.map(AssetEntity::parsedText).orElse(""),
+                script.map(AssetEntity::parsedSummary).orElse(""),
+                referenceImages,
+                failedScripts
+        );
     }
 
     @Transactional
@@ -228,7 +336,8 @@ public class AssetService {
                 request.type(),
                 request.name(),
                 request.url(),
-                request.thumbnailUrl() == null || request.thumbnailUrl().isBlank() ? request.url() : request.thumbnailUrl()
+                request.thumbnailUrl() == null || request.thumbnailUrl().isBlank() ? request.url() : request.thumbnailUrl(),
+                request.purpose()
         );
     }
 
@@ -244,6 +353,7 @@ public class AssetService {
                     String thumbnailUrl = request.thumbnailUrl() == null || request.thumbnailUrl().isBlank()
                             ? request.url()
                             : request.thumbnailUrl();
+                    String resolvedPurpose = resolvePurpose(request.purpose(), request.type(), request.name(), asset.contentType());
                     asset.updateDetails(
                             normalize(request.projectId()),
                             normalize(request.canvasId()),
@@ -251,8 +361,10 @@ public class AssetService {
                             safeAssetType(request.type()),
                             normalize(request.name()),
                             normalize(request.url()),
-                            normalize(thumbnailUrl)
+                            normalize(thumbnailUrl),
+                            resolvedPurpose
                     );
+                    refreshAttachmentContext(asset, resolvedPurpose);
                     return toResponse(assetRepository.save(asset));
                 });
     }
@@ -330,6 +442,156 @@ public class AssetService {
         return value == null ? "" : value.trim();
     }
 
+    private List<AssetEntity> selectedAttachmentEntities(String projectId, List<String> attachmentIds) {
+        if (attachmentIds != null && !attachmentIds.isEmpty()) {
+            Set<String> selectedIds = new java.util.LinkedHashSet<>(attachmentIds.stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .map(String::trim)
+                    .toList());
+            if (selectedIds.isEmpty()) {
+                return List.of();
+            }
+            return assetRepository.findAllById(selectedIds).stream()
+                    .filter(asset -> normalize(projectId).isBlank() || normalize(projectId).equals(asset.projectId()))
+                    .sorted(java.util.Comparator.comparing(AssetEntity::createdAt).reversed())
+                    .toList();
+        }
+        return assetRepository.findByProjectIdOrderByCreatedAtDesc(normalize(projectId));
+    }
+
+    private void applyParseResult(
+            AssetEntity asset,
+            AssetParseService.ParseResult result,
+            String purpose,
+            String filename,
+            String contentType,
+            Long sizeBytes
+    ) {
+        asset.updateAttachmentContext(
+                purpose,
+                result.status(),
+                result.text(),
+                result.summary(),
+                result.error(),
+                metadataJson(filename, contentType, sizeBytes)
+        );
+    }
+
+    private void applyParseResult(
+            AssetEntity asset,
+            AssetParseService.ParseResult result,
+            String purpose,
+            String filename,
+            String contentType,
+            Long sizeBytes,
+            Map<String, Object> metadata
+    ) {
+        asset.updateAttachmentContext(
+                purpose,
+                result.status(),
+                result.text(),
+                result.summary(),
+                result.error(),
+                metadataJson(filename, contentType, sizeBytes, metadata)
+        );
+    }
+
+    private void refreshAttachmentContext(AssetEntity asset, String purpose) {
+        if (!"script_source".equals(purpose)) {
+            asset.updateAttachmentContext(
+                    purpose,
+                    "not_required",
+                    null,
+                    null,
+                    null,
+                    metadataJson(asset.name(), asset.contentType(), asset.sizeBytes())
+            );
+            return;
+        }
+        if (asset.objectKey() == null || asset.objectKey().isBlank()) {
+            asset.updateAttachmentContext(
+                    purpose,
+                    "failed",
+                    null,
+                    null,
+                    "没有可解析的已存储文件，请重新上传剧本文档",
+                    metadataJson(asset.name(), asset.contentType(), asset.sizeBytes())
+            );
+            return;
+        }
+        StoredObject object = videoStorageService.load(asset.objectKey());
+        String contentType = asset.contentType() == null || asset.contentType().isBlank()
+                ? object.contentType()
+                : asset.contentType();
+        applyParseResult(
+                asset,
+                assetParseService.parse(asset.name(), contentType, purpose, object.bytes()),
+                purpose,
+                asset.name(),
+                contentType,
+                asset.sizeBytes()
+        );
+    }
+
+    private String resolvePurpose(String requestedPurpose, String type, String filename, String contentType) {
+        String normalized = normalize(requestedPurpose)
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_-]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (List.of(
+                "reference_image",
+                "character_reference",
+                "script_source",
+                "library_asset",
+                "derivative_design",
+                "derivative_mockup",
+                "model_preview",
+                "print_package"
+        ).contains(normalized)) {
+            return normalized;
+        }
+        String safeType = safeAssetType(type);
+        if ("character".equals(safeType)) {
+            return "character_reference";
+        }
+        if ("derivative".equals(safeType)) {
+            return "derivative_design";
+        }
+        if ("model".equals(safeType)) {
+            return "model_preview";
+        }
+        if ("print".equals(safeType)) {
+            return "print_package";
+        }
+        if ("image".equals(safeType)) {
+            return "reference_image";
+        }
+        if (assetParseService.isSupportedScriptFile(filename, contentType)) {
+            return "script_source";
+        }
+        return "library_asset";
+    }
+
+    private String metadataJson(String filename, String contentType, Long sizeBytes) {
+        return metadataJson(filename, contentType, sizeBytes, Map.of());
+    }
+
+    private String metadataJson(String filename, String contentType, Long sizeBytes, Map<String, Object> metadata) {
+        try {
+            Map<String, Object> next = new java.util.LinkedHashMap<>();
+            if (metadata != null) {
+                next.putAll(metadata);
+            }
+            next.putIfAbsent("filename", normalize(filename));
+            next.putIfAbsent("contentType", normalize(contentType));
+            next.putIfAbsent("sizeBytes", sizeBytes == null ? 0L : sizeBytes);
+            return objectMapper.writeValueAsString(next);
+        } catch (Exception ignored) {
+            return "{}";
+        }
+    }
+
     private String safeAssetType(String type) {
         String normalized = normalize(type)
                 .toLowerCase(Locale.ROOT)
@@ -348,6 +610,9 @@ public class AssetService {
         }
         if (contentType.startsWith("audio/")) {
             return "audio";
+        }
+        if (assetParseService.isSupportedScriptFile("", contentType)) {
+            return "file";
         }
         return "asset";
     }
@@ -413,8 +678,28 @@ public class AssetService {
                 asset.name(),
                 asset.url(),
                 asset.thumbnailUrl(),
+                valueOrDefault(asset.purpose(), "library_asset"),
+                valueOrDefault(asset.parseStatus(), "not_required"),
+                asset.parsedSummary(),
+                asset.parseError(),
+                metadata(asset.metadataJson()),
                 asset.createdAt()
         );
+    }
+
+    private Map<String, Object> metadata(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(metadataJson, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private String valueOrDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private String contentUrl(String assetId) {
@@ -433,5 +718,18 @@ public class AssetService {
     }
 
     private record DownloadedAsset(byte[] bytes, String contentType) {
+    }
+
+    public record AttachmentContext(
+            String scriptAssetId,
+            String scriptName,
+            String scriptText,
+            String scriptSummary,
+            List<AssetResponse> referenceImages,
+            List<AssetResponse> failedScripts
+    ) {
+        public boolean hasScript() {
+            return scriptText != null && !scriptText.isBlank();
+        }
     }
 }

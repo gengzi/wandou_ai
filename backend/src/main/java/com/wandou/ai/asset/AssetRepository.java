@@ -12,6 +12,10 @@ import java.util.List;
 public interface AssetRepository extends JpaRepository<AssetEntity, String> {
     List<AssetEntity> findByProjectIdOrderByCreatedAtDesc(String projectId);
 
+    List<AssetEntity> findByProjectIdAndPurposeOrderByCreatedAtDesc(String projectId, String purpose);
+
+    List<AssetEntity> findByProjectIdAndPurposeAndParseStatusOrderByCreatedAtDesc(String projectId, String purpose, String parseStatus);
+
     @Query("""
             select asset from AssetEntity asset
             where (asset.objectKey is null or asset.objectKey = '')

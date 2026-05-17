@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clapperboard,
+  FileVideo,
   Film,
   Image as ImageIcon,
   Layers3,
@@ -14,6 +15,7 @@ import {
   Moon,
   Paperclip,
   Pencil,
+  Play,
   Plus,
   Shirt,
   Sparkles,
@@ -22,13 +24,143 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { createProject, listProjects, ProjectResponse, updateProject, uploadAsset, UserResponse } from '../lib/api';
+import { AssetResponse, createProject, getAuthToken, listAssetsPage, listProjects, ProjectResponse, updateProject, uploadAsset, UserResponse } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useTheme } from '../lib/theme';
 
 interface HomeViewProps {
   onNavigate: (prompt?: string, projectId?: string) => void;
   currentUser?: UserResponse | null;
+}
+
+const withAssetAuthQuery = (url: string) => {
+  if (!url || !url.startsWith('/api/')) return url;
+  const token = getAuthToken();
+  if (!token) return url;
+  const nextUrl = new URL(url, window.location.origin);
+  nextUrl.searchParams.set('Authorization', `Bearer ${token}`);
+  return nextUrl.pathname + nextUrl.search;
+};
+
+const previewableAssetUrl = (url?: string) => {
+  if (!url) return '';
+  if (
+    url.startsWith('/api/')
+    || url.startsWith('http://')
+    || url.startsWith('https://')
+    || url.startsWith('data:')
+  ) {
+    return withAssetAuthQuery(url);
+  }
+  return '';
+};
+
+const mediaPreviewAssets = (assets: AssetResponse[]) => (
+  assets
+    .filter((asset) => ['image', 'video', 'character', 'scene'].includes(asset.type))
+    .filter((asset) => asset.url || asset.thumbnailUrl)
+    .slice(0, 4)
+);
+
+function ProjectPreviewStrip({ assets, aspectRatio }: { assets: AssetResponse[]; aspectRatio: string }) {
+  const [failedAssetIds, setFailedAssetIds] = useState<Record<string, boolean>>({});
+  const visibleAssets = assets.filter((asset) => !failedAssetIds[asset.id]);
+  const mainAsset = visibleAssets[0];
+  const thumbnails = visibleAssets.slice(1, 4);
+
+  const markFailed = (assetId: string) => {
+    setFailedAssetIds((current) => ({ ...current, [assetId]: true }));
+  };
+
+  if (!mainAsset) {
+    return (
+      <>
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(148,163,184,0.04))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(16,185,129,0.22),transparent_26%),linear-gradient(180deg,transparent,rgba(0,0,0,0.28))]" />
+        <div className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-black/30 text-brand">
+          <Clapperboard size={22} />
+        </div>
+        <div className="absolute left-4 top-4 rounded-full bg-black/50 px-3 py-1 text-[11px] font-semibold text-brand backdrop-blur">
+          {aspectRatio}
+        </div>
+      </>
+    );
+  }
+
+  const mainPreview = previewableAssetUrl(mainAsset.thumbnailUrl || (mainAsset.type === 'image' ? mainAsset.url : ''));
+  const mainVideoUrl = mainAsset.type === 'video' ? previewableAssetUrl(mainAsset.url) : '';
+  const mainImageUrl = mainPreview || (mainAsset.type !== 'video' ? previewableAssetUrl(mainAsset.url) : '');
+
+  return (
+    <>
+      <div className="absolute inset-0 bg-black">
+        {mainAsset.type === 'video' && mainVideoUrl ? (
+          <video
+            src={mainVideoUrl}
+            poster={mainPreview || undefined}
+            preload="metadata"
+            muted
+            playsInline
+            onError={() => markFailed(mainAsset.id)}
+            className="h-full w-full object-cover opacity-90 transition-transform duration-500 hover:scale-[1.03]"
+          />
+        ) : mainImageUrl ? (
+          <img
+            src={mainImageUrl}
+            alt={mainAsset.name}
+            loading="lazy"
+            onError={() => markFailed(mainAsset.id)}
+            className="h-full w-full object-cover opacity-90 transition-transform duration-500 hover:scale-[1.03]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(148,163,184,0.06))] text-brand">
+            <ImageIcon size={28} />
+          </div>
+        )}
+      </div>
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.08),rgba(0,0,0,0.66))]" />
+      <div className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-[11px] font-semibold text-brand backdrop-blur">
+        {aspectRatio}
+      </div>
+      <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            {mainAsset.type === 'video' ? <FileVideo size={14} className="text-brand" /> : <ImageIcon size={14} className="text-brand" />}
+            <span>{mainAsset.type === 'video' ? '视频预览' : '图片预览'}</span>
+          </div>
+          <div className="mt-1 max-w-[220px] truncate text-[11px] text-slate-300">{mainAsset.name}</div>
+        </div>
+        {mainAsset.type === 'video' ? (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur">
+            <Play size={15} fill="currentColor" />
+          </div>
+        ) : thumbnails.length > 0 ? (
+          <div className="flex shrink-0 -space-x-2">
+            {thumbnails.map((asset) => {
+              const thumbUrl = previewableAssetUrl(asset.thumbnailUrl || (asset.type === 'image' ? asset.url : ''));
+              return (
+                <span key={asset.id} className="h-10 w-10 overflow-hidden rounded-lg border border-white/20 bg-black/45 shadow-lg">
+                  {thumbUrl ? (
+                    <img
+                      src={thumbUrl}
+                      alt={asset.name}
+                      loading="lazy"
+                      onError={() => markFailed(asset.id)}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-brand">
+                      {asset.type === 'video' ? <FileVideo size={15} /> : <ImageIcon size={15} />}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
 }
 
 export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
@@ -47,6 +179,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
   const [uploadingReference, setUploadingReference] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
+  const [projectPreviews, setProjectPreviews] = useState<Record<string, AssetResponse[]>>({});
   const referenceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,8 +203,39 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
       title: project.name,
       time: new Date(project.createdAt).toLocaleString(),
       status: project.aspectRatio,
+      previews: projectPreviews[project.id] || [],
     }));
-  }, [projects, showAllProjects]);
+  }, [projectPreviews, projects, showAllProjects]);
+
+  useEffect(() => {
+    const visibleProjectIds = projects.slice(0, showAllProjects ? projects.length : 4).map((project) => project.id);
+    const missingProjectIds = visibleProjectIds.filter((projectId) => !Object.prototype.hasOwnProperty.call(projectPreviews, projectId));
+    if (missingProjectIds.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(missingProjectIds.map(async (projectId) => {
+      try {
+        const page = await listAssetsPage({ projectId, page: 0, size: 12, sort: 'desc' });
+        return [projectId, mediaPreviewAssets(page.content)] as const;
+      } catch (error) {
+        console.warn('load project previews failed', projectId, error);
+        return [projectId, []] as const;
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      setProjectPreviews((current) => {
+        const next = { ...current };
+        entries.forEach(([projectId, assets]) => {
+          next[projectId] = assets;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPreviews, projects, showAllProjects]);
 
   const submit = () => {
     onNavigate(prompt, referenceProjectId);
@@ -114,13 +278,17 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
         setReferenceProjectId(project.id);
         setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
       }
-      await uploadAsset({
+      const uploadedAsset = await uploadAsset({
         projectId: project.id,
         canvasId: project.canvasId,
         type: 'image',
         name: file.name,
         file,
       });
+      setProjectPreviews((current) => ({
+        ...current,
+        [project.id]: mediaPreviewAssets([uploadedAsset, ...(current[project.id] || [])]),
+      }));
       setNotice('参考图已上传到项目素材库，开始创作时会带入这个项目上下文。');
     } catch (error) {
       console.error(error);
@@ -499,13 +667,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
               >
                 <button onClick={() => onNavigate(undefined, project.id)} className="block w-full text-left">
                   <div className="relative h-36 overflow-hidden border-b border-white/10 bg-[#121416]">
-                  <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(148,163,184,0.04))]" />
-                  <div className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-black/30 text-brand">
-                    <Clapperboard size={22} />
-                  </div>
-                  <div className="absolute left-4 top-4 rounded-full bg-black/50 px-3 py-1 text-[11px] font-semibold text-brand backdrop-blur">
-                    {project.status}
-                  </div>
+                    <ProjectPreviewStrip assets={project.previews} aspectRatio={project.status} />
                   </div>
                 </button>
                 <div className="p-5">

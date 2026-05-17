@@ -23,6 +23,7 @@ import {
   AssetPageResponse,
   AssetResponse,
   createAsset,
+  createDerivative,
   deleteAsset,
   getAsset,
   getAuthToken,
@@ -33,6 +34,7 @@ import {
   updateAsset,
   uploadAsset,
 } from '../lib/api';
+import ModelPreview, { canPreviewModel } from './ModelPreview';
 
 const PROJECT_FOLDER_PAGE_SIZE = 8;
 
@@ -43,6 +45,9 @@ const assetTabs = [
   { id: 'image', label: '图片' },
   { id: 'video', label: '视频' },
   { id: 'audio', label: '音频' },
+];
+
+const derivativeAssetTabs = [
   { id: 'derivative', label: '衍生品' },
   { id: 'model', label: '3D模型' },
   { id: 'print', label: '打印文件' },
@@ -63,18 +68,61 @@ const typeLabels: Record<string, string> = {
 
 const typeLabel = (type: string) => typeLabels[type] || type || '素材';
 
+const purposeLabels: Record<string, string> = {
+  script_source: '剧本来源',
+  reference_image: '参考图',
+  character_reference: '角色参考',
+  derivative_design: '衍生设计',
+  derivative_mockup: '商品预览',
+  model_preview: '3D预览',
+  print_package: '生产包',
+  library_asset: '普通素材',
+};
+
+const purposeLabel = (purpose?: string) => purposeLabels[purpose || 'library_asset'] || purpose || '普通素材';
+
+const parseStatusLabel = (status?: string) => {
+  if (status === 'parsed') return '已解析';
+  if (status === 'failed') return '解析失败';
+  if (status === 'pending') return '等待解析';
+  if (status === 'not_required') return '无需解析';
+  return status || '无需解析';
+};
+
+type DerivativeKind = 'tshirt_print' | 'sticker_set' | 'model_preview';
+
+const derivativeKindLabels: Record<DerivativeKind, string> = {
+  tshirt_print: '短袖印花',
+  sticker_set: '贴纸套装',
+  model_preview: '3D预览',
+};
+
 const assetTypeFromFile = (file: File) => {
   const lowerName = file.name.toLowerCase();
-  if (lowerName.endsWith('.stl') || lowerName.endsWith('.3mf') || lowerName.endsWith('.gcode')) {
+  if (['.txt', '.md', '.pdf', '.docx'].some((extension) => lowerName.endsWith(extension))) {
+    return 'file';
+  }
+  if (lowerName.endsWith('.3mf') || lowerName.endsWith('.gcode') || lowerName.endsWith('.zip')) {
     return 'print';
   }
-  if (lowerName.endsWith('.glb') || lowerName.endsWith('.gltf') || lowerName.endsWith('.obj') || lowerName.endsWith('.fbx')) {
+  if (lowerName.endsWith('.glb') || lowerName.endsWith('.gltf') || lowerName.endsWith('.obj') || lowerName.endsWith('.fbx') || lowerName.endsWith('.stl')) {
     return 'model';
   }
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
   if (file.type.startsWith('audio/')) return 'audio';
   return 'asset';
+};
+
+const assetPurposeFromFile = (file: File) => {
+  const lowerName = file.name.toLowerCase();
+  if (['.glb', '.gltf', '.obj', '.fbx', '.stl'].some((extension) => lowerName.endsWith(extension))) return 'model_preview';
+  if (['.3mf', '.gcode', '.zip'].some((extension) => lowerName.endsWith(extension))) return 'print_package';
+  if (file.type.startsWith('image/')) return 'reference_image';
+  if (file.type.startsWith('text/') || ['.txt', '.md', '.pdf', '.docx'].some((extension) => lowerName.endsWith(extension))) {
+    return 'script_source';
+  }
+  return 'library_asset';
 };
 
 const folderPalettes = [
@@ -282,8 +330,10 @@ export default function AssetsView() {
   });
   const [loadingPage, setLoadingPage] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showDerivativeForm, setShowDerivativeForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetResponse | null>(null);
+  const [derivativeSource, setDerivativeSource] = useState<AssetResponse | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const foldersRef = useRef<HTMLDivElement>(null);
@@ -295,6 +345,13 @@ export default function AssetsView() {
     name: '',
     url: '',
     thumbnailUrl: '',
+    purpose: 'auto',
+  });
+  const [derivativeForm, setDerivativeForm] = useState({
+    kind: 'tshirt_print' as DerivativeKind,
+    prompt: '',
+    size: '30cm x 40cm',
+    technique: 'DTF/DTG 印花',
   });
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
@@ -405,6 +462,7 @@ export default function AssetsView() {
       name: '',
       url: '',
       thumbnailUrl: '',
+      purpose: 'auto',
     });
     setEditingAssetId(null);
     setShowCreateForm(true);
@@ -419,23 +477,35 @@ export default function AssetsView() {
       name: asset.name || '',
       url: asset.url || '',
       thumbnailUrl: asset.thumbnailUrl || '',
+      purpose: asset.purpose || 'library_asset',
     });
     setEditingAssetId(asset.id);
     setShowCreateForm(true);
   };
 
-  const openDerivativeForm = (type: string, label: string) => {
+  const openDerivativeForm = (kind: DerivativeKind) => {
     if (!selectedAsset) return;
-    setForm({
-      projectId: selectedAsset.projectId || activeProject?.id || projects[0]?.id || '',
-      canvasId: selectedAsset.canvasId || activeProject?.canvasId || projects[0]?.canvasId || '',
-      nodeId: selectedAsset.nodeId || '',
-      type,
-      name: `${selectedAsset.name} - ${label}`,
-      url: selectedAsset.url,
-      thumbnailUrl: selectedAsset.thumbnailUrl || selectedAsset.url,
+    setDerivativeSource(selectedAsset);
+    setDerivativeForm({
+      kind,
+      prompt: '',
+      size: kind === 'sticker_set' ? 'A5 贴纸排版' : kind === 'model_preview' ? '按上传模型单位' : '30cm x 40cm',
+      technique: kind === 'sticker_set' ? '高清不干胶/模切' : kind === 'model_preview' ? 'GLB/OBJ/STL 预览' : 'DTF/DTG 印花',
     });
-    setSelectedAsset(null);
+    setShowDerivativeForm(true);
+  };
+
+  const openModelUploadForm = (asset: AssetResponse) => {
+    setForm({
+      projectId: asset.projectId || activeProject?.id || projects[0]?.id || '',
+      canvasId: asset.canvasId || activeProject?.canvasId || projects[0]?.canvasId || '',
+      nodeId: asset.nodeId || '',
+      type: 'model',
+      name: asset.name.replace(/待上传$/, '').trim(),
+      url: '',
+      thumbnailUrl: asset.thumbnailUrl || '',
+      purpose: 'model_preview',
+    });
     setEditingAssetId(null);
     setShowCreateForm(true);
   };
@@ -470,6 +540,7 @@ export default function AssetsView() {
         name: form.name.trim(),
         url: form.url.trim(),
         thumbnailUrl: form.thumbnailUrl.trim() || undefined,
+        purpose: form.purpose === 'auto' ? undefined : form.purpose,
       };
       const asset = editingAssetId
         ? await updateAsset(editingAssetId, payload)
@@ -484,6 +555,47 @@ export default function AssetsView() {
       setNotice(editingAssetId ? '素材信息已更新。' : '素材已登记到项目资产库。');
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : '素材登记失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateDerivative = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!derivativeSource) {
+      setError('请先选择角色素材。');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await createDerivative({
+        sourceAssetId: derivativeSource.id,
+        kind: derivativeForm.kind,
+        prompt: derivativeForm.prompt.trim() || undefined,
+        settings: {
+          size: derivativeForm.size,
+          technique: derivativeForm.technique,
+        },
+      });
+      const createdAssets = [result.asset, result.mockupAsset, result.printAsset].filter(Boolean) as AssetResponse[];
+      setAssets((current) => [
+        ...createdAssets,
+        ...current.filter((item) => !createdAssets.some((asset) => asset.id === item.id)),
+      ]);
+      const nextType = result.kind === 'model_preview' ? 'model' : 'derivative';
+      setActiveType(nextType);
+      setSelectedProjectId(result.asset.projectId || derivativeSource.projectId || selectedProjectId);
+      setPage(0);
+      refreshPage(0, result.asset.projectId || derivativeSource.projectId || selectedProjectId);
+      setSelectedAsset(result.asset);
+      setShowDerivativeForm(false);
+      setDerivativeSource(null);
+      setNotice(result.kind === 'model_preview'
+        ? '3D预览资产已创建，请上传 GLB/OBJ/STL 模型文件。'
+        : `${derivativeKindLabels[result.kind]}已生成，生产包已写入素材库。`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '衍生品生成失败');
     } finally {
       setSaving(false);
     }
@@ -516,6 +628,7 @@ export default function AssetsView() {
     }
     const project = projectById.get(form.projectId.trim());
     const type = assetTypeFromFile(file);
+    const purpose = form.purpose === 'auto' ? assetPurposeFromFile(file) : form.purpose || assetPurposeFromFile(file);
     setSaving(true);
     setError(null);
     try {
@@ -525,6 +638,7 @@ export default function AssetsView() {
         nodeId: form.nodeId.trim() || undefined,
         type,
         name: form.name.trim() || file.name,
+        purpose,
         file,
       });
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
@@ -564,6 +678,12 @@ export default function AssetsView() {
 
   const selectedAssetUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.url) : '';
   const selectedAssetThumbnailUrl = selectedAsset ? withAssetAuthQuery(selectedAsset.thumbnailUrl || selectedAsset.url) : '';
+  const selectedAssetCanDerive = Boolean(selectedAsset && (
+    selectedAsset.type === 'character'
+    || selectedAsset.purpose === 'character_reference'
+    || selectedAsset.purpose === 'reference_image'
+  ));
+  const selectedAssetCanPreviewModel = Boolean(selectedAsset?.type === 'model' && canPreviewModel(selectedAssetUrl));
 
   return (
     <div className="h-full overflow-y-auto bg-bg-dark text-slate-300">
@@ -651,6 +771,26 @@ export default function AssetsView() {
                 加载更多项目
               </button>
             )}
+          </div>
+        </section>
+
+        <section className="mb-8 border-y border-white/10 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">角色衍生资产</h2>
+              <div className="mt-1 text-xs text-slate-500">衍生品、3D 模型和打印文件</div>
+            </div>
+            <div className="flex rounded-lg border border-white/10 bg-white/5 p-1">
+              {derivativeAssetTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveType(tab.id)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${activeType === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -748,11 +888,17 @@ export default function AssetsView() {
                       </div>
                       <div className="min-w-0">
                         <div className="truncate text-sm font-bold text-slate-100">{asset.name}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                          <span>{typeLabel(asset.type)}</span>
-                          <span>{projectLabel(asset.projectId)}</span>
-                          {asset.nodeId && <span className="max-w-[180px] truncate">节点 {asset.nodeId}</span>}
-                        </div>
+	                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+	                          <span>{typeLabel(asset.type)}</span>
+	                          <span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-400">{purposeLabel(asset.purpose)}</span>
+	                          {asset.purpose === 'script_source' && (
+	                            <span className={`rounded px-1.5 py-0.5 ${asset.parseStatus === 'failed' ? 'bg-red-500/10 text-red-300' : asset.parseStatus === 'parsed' ? 'bg-brand/10 text-brand' : 'bg-white/5 text-slate-400'}`}>
+	                              {parseStatusLabel(asset.parseStatus)}
+	                            </span>
+	                          )}
+	                          <span>{projectLabel(asset.projectId)}</span>
+	                          {asset.nodeId && <span className="max-w-[180px] truncate">节点 {asset.nodeId}</span>}
+	                        </div>
                       </div>
                       <div className="text-right text-[11px] text-slate-500">{new Date(asset.createdAt).toLocaleString()}</div>
                     </button>
@@ -795,9 +941,13 @@ export default function AssetsView() {
                     <AssetThumbnail asset={asset} />
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-slate-200 transition-colors group-hover:text-brand">{asset.name}</div>
-                      <div className="text-xs text-slate-500">{typeLabel(asset.type)}</div>
-                    </div>
-                  </td>
+	                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+	                        <span>{typeLabel(asset.type)}</span>
+	                        <span>{purposeLabel(asset.purpose)}</span>
+	                        {asset.purpose === 'script_source' && <span>{parseStatusLabel(asset.parseStatus)}</span>}
+	                      </div>
+	                    </div>
+	                  </td>
                   <td className="px-6 py-2.5 text-xs text-slate-500">{projectLabel(asset.projectId)}</td>
                   <td className="px-6 py-2.5 text-xs text-slate-500">{asset.nodeId || '--'}</td>
                   <td className="px-6 py-2.5 text-xs text-slate-500">{new Date(asset.createdAt).toLocaleString()}</td>
@@ -873,7 +1023,7 @@ export default function AssetsView() {
               </div>
               <div className="grid gap-3 p-5 md:grid-cols-2">
                 <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="名称" />
-                <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+	                <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
                   <option value="image">图片</option>
                   <option value="video">视频</option>
                   <option value="audio">音频</option>
@@ -882,9 +1032,20 @@ export default function AssetsView() {
                   <option value="derivative">衍生品</option>
                   <option value="model">3D模型</option>
                   <option value="print">打印文件</option>
-                  <option value="file">文件</option>
-                </select>
-                <select value={form.projectId} onChange={(event) => handleProjectChange(event.target.value)} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+	                  <option value="file">文件</option>
+	                </select>
+	                <select value={form.purpose} onChange={(event) => setForm({ ...form, purpose: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
+	                  <option value="auto">自动判定用途</option>
+	                  <option value="script_source">剧本来源</option>
+	                  <option value="reference_image">参考图</option>
+	                  <option value="character_reference">角色参考</option>
+	                  <option value="derivative_design">衍生设计</option>
+	                  <option value="derivative_mockup">商品预览</option>
+	                  <option value="model_preview">3D预览</option>
+	                  <option value="print_package">生产包</option>
+	                  <option value="library_asset">普通素材</option>
+	                </select>
+	                <select value={form.projectId} onChange={(event) => handleProjectChange(event.target.value)} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50">
                   <option value="">选择项目</option>
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>{project.name}</option>
@@ -894,7 +1055,7 @@ export default function AssetsView() {
                   <Upload size={16} />
                   上传文件
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.glb,.gltf,.obj,.fbx,.stl,.3mf,.gcode,.zip" className="hidden" onChange={handleUploadFile} />
+	                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.txt,.md,.pdf,.docx,.glb,.gltf,.obj,.fbx,.stl,.3mf,.gcode,.zip" className="hidden" onChange={handleUploadFile} />
                 <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="素材 URL" />
                 <input value={form.thumbnailUrl} onChange={(event) => setForm({ ...form, thumbnailUrl: event.target.value })} className="md:col-span-2 rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="缩略图 URL（可选）" />
                 <input value={form.canvasId} onChange={(event) => setForm({ ...form, canvasId: event.target.value })} className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50" placeholder="画布 ID" />
@@ -911,6 +1072,75 @@ export default function AssetsView() {
             </form>
           </div>
         )}
+
+        {showDerivativeForm && derivativeSource && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6 py-8 backdrop-blur-sm">
+            <form onSubmit={handleCreateDerivative} className="wandou-assets-modal w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-[#121213] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+              <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.03] px-5 py-4">
+                <div>
+                  <h2 className="text-sm font-bold text-white">创建角色衍生品</h2>
+                  <p className="mt-1 text-xs text-slate-500">{derivativeSource.name}</p>
+                </div>
+                <button type="button" onClick={() => { setShowDerivativeForm(false); setDerivativeSource(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white" aria-label="关闭角色衍生品">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="grid gap-3 p-5">
+                <div className="grid grid-cols-3 gap-2">
+                  {(['tshirt_print', 'sticker_set', 'model_preview'] as DerivativeKind[]).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => setDerivativeForm({
+                        ...derivativeForm,
+                        kind,
+                        size: kind === 'sticker_set' ? 'A5 贴纸排版' : kind === 'model_preview' ? '按上传模型单位' : '30cm x 40cm',
+                        technique: kind === 'sticker_set' ? '高清不干胶/模切' : kind === 'model_preview' ? 'GLB/OBJ/STL 预览' : 'DTF/DTG 印花',
+                      })}
+                      className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${derivativeForm.kind === kind ? 'border-brand/50 bg-brand/15 text-brand' : 'border-white/10 bg-white/5 text-slate-300 hover:border-brand/30 hover:text-white'}`}
+                    >
+                      {derivativeKindLabels[kind]}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={derivativeForm.prompt}
+                  onChange={(event) => setDerivativeForm({ ...derivativeForm, prompt: event.target.value })}
+                  rows={4}
+                  className="resize-none rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm leading-6 outline-none focus:border-brand/50"
+                  placeholder="补充风格、动作、图案位置或商品要求"
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    value={derivativeForm.size}
+                    onChange={(event) => setDerivativeForm({ ...derivativeForm, size: event.target.value })}
+                    className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+                    placeholder="尺寸"
+                  />
+                  <input
+                    value={derivativeForm.technique}
+                    onChange={(event) => setDerivativeForm({ ...derivativeForm, technique: event.target.value })}
+                    className="rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
+                    placeholder="工艺"
+                  />
+                </div>
+                {derivativeForm.kind === 'model_preview' && (
+                  <div className="rounded-xl border border-orange-400/20 bg-orange-400/10 px-3 py-2 text-xs leading-6 text-orange-100">
+                    创建后会生成 3D 预览资产和画布节点，模型文件通过上传 GLB、OBJ 或 STL 补充。
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-white/5 px-5 py-4">
+                <button type="button" onClick={() => { setShowDerivativeForm(false); setDerivativeSource(null); }} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10">
+                  取消
+                </button>
+                <button type="submit" disabled={saving} className="rounded-lg bg-brand px-5 py-2 text-sm font-bold text-white hover:bg-brand/90 disabled:opacity-60">
+                  {saving ? '处理中...' : derivativeForm.kind === 'model_preview' ? '创建预览资产' : '生成衍生品'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </main>
 
       {selectedAsset && (
@@ -920,9 +1150,11 @@ export default function AssetsView() {
             <button onClick={() => setSelectedAsset(null)} className="text-slate-500 hover:text-white"><X size={18} /></button>
           </div>
           <div className="space-y-4 text-sm">
-            {(selectedAssetThumbnailUrl || selectedAssetUrl) && (
+            {(selectedAssetCanPreviewModel || selectedAssetThumbnailUrl || selectedAssetUrl) && (
               <div className="aspect-video overflow-hidden rounded-xl border border-white/10 bg-black/30">
-                {selectedAsset.type === 'video' ? (
+                {selectedAssetCanPreviewModel ? (
+                  <ModelPreview url={selectedAssetUrl} name={selectedAsset.name} />
+                ) : selectedAsset.type === 'video' ? (
                   <video src={selectedAssetUrl} poster={selectedAssetThumbnailUrl || undefined} controls className="h-full w-full object-cover" />
                 ) : (
                   <img
@@ -940,10 +1172,33 @@ export default function AssetsView() {
               <div className="text-xs text-slate-500">名称</div>
               <div className="mt-1 font-semibold text-slate-200">{selectedAsset.name}</div>
             </div>
-            <div>
-              <div className="text-xs text-slate-500">所属项目</div>
-              <div className="mt-1 text-slate-300">{projectLabel(selectedAsset.projectId)}</div>
-            </div>
+	            <div>
+	              <div className="text-xs text-slate-500">所属项目</div>
+	              <div className="mt-1 text-slate-300">{projectLabel(selectedAsset.projectId)}</div>
+	            </div>
+	            <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
+	              <div className="rounded-lg bg-black/20 p-3">
+	                <div className="text-slate-500">用途</div>
+	                <div className="mt-1 text-slate-200">{purposeLabel(selectedAsset.purpose)}</div>
+	              </div>
+	              <div className="rounded-lg bg-black/20 p-3">
+	                <div className="text-slate-500">解析状态</div>
+	                <div className={`mt-1 ${selectedAsset.parseStatus === 'failed' ? 'text-red-300' : selectedAsset.parseStatus === 'parsed' ? 'text-brand' : 'text-slate-300'}`}>
+	                  {parseStatusLabel(selectedAsset.parseStatus)}
+	                </div>
+	              </div>
+	            </div>
+	            {selectedAsset.parsedSummary && (
+	              <div className="rounded-xl border border-brand/15 bg-brand/5 p-3">
+	                <div className="text-xs font-bold text-brand">剧本摘要</div>
+	                <div className="mt-2 text-xs leading-6 text-slate-300">{selectedAsset.parsedSummary}</div>
+	              </div>
+	            )}
+	            {selectedAsset.parseError && (
+	              <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs leading-6 text-red-200">
+	                解析失败：{selectedAsset.parseError}
+	              </div>
+	            )}
             <div>
               <div className="text-xs text-slate-500">URL</div>
               <a href={selectedAssetUrl || selectedAsset.url} target="_blank" rel="noreferrer" className="mt-1 block break-all text-brand hover:text-brand/80">{selectedAsset.url}</a>
@@ -958,23 +1213,22 @@ export default function AssetsView() {
                 <div className="mt-1 break-all">{selectedAsset.nodeId || '--'}</div>
               </div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <div className="mb-3 text-xs font-bold text-slate-300">角色衍生</div>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => openDerivativeForm('derivative', '短袖印花')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
-                  短袖印花
-                </button>
-                <button onClick={() => openDerivativeForm('derivative', '贴纸套装')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
-                  贴纸套装
-                </button>
-                <button onClick={() => openDerivativeForm('model', '3D模型')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
-                  3D模型
-                </button>
-                <button onClick={() => openDerivativeForm('print', '打印文件')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
-                  打印文件
-                </button>
+            {selectedAssetCanDerive && (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="mb-3 text-xs font-bold text-slate-300">角色衍生</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => openDerivativeForm('tshirt_print')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                    短袖印花
+                  </button>
+                  <button onClick={() => openDerivativeForm('sticker_set')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                    贴纸套装
+                  </button>
+                  <button onClick={() => openDerivativeForm('model_preview')} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-brand/40 hover:text-white">
+                    3D预览
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => openEditAssetForm(selectedAsset)}
@@ -996,6 +1250,14 @@ export default function AssetsView() {
               >
                 打开原文件
               </button>
+              {selectedAsset.type === 'model' && selectedAsset.purpose === 'model_preview' && (
+                <button
+                  onClick={() => openModelUploadForm(selectedAsset)}
+                  className="rounded-lg border border-orange-400/20 bg-orange-400/10 px-3 py-2 text-xs font-bold text-orange-100 hover:bg-orange-400/15"
+                >
+                  上传模型
+                </button>
+              )}
               <button
                 onClick={() => selectedAssetUrl && window.open(selectedAssetUrl, '_blank', 'noopener,noreferrer')}
                 disabled={!selectedAssetUrl || !['print', 'model', 'file'].includes(selectedAsset.type)}

@@ -1,6 +1,7 @@
 package com.wandou.ai.agent.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 
 public record AgentRunRequest(
         String projectId,
@@ -18,6 +19,7 @@ public record AgentRunRequest(
         String resolution,
         Integer durationSeconds,
         Boolean audioEnabled,
-        Boolean multiCameraEnabled
+        Boolean multiCameraEnabled,
+        List<String> attachmentIds
 ) {
 }
