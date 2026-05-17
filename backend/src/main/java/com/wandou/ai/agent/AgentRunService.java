@@ -133,6 +133,18 @@ public class AgentRunService {
         return agentRunRepository.findById(runId).map(this::toDetail);
     }
 
+    public java.util.List<AgentRunDetailResponse> listByProject(String projectId) {
+        if (projectId == null || projectId.isBlank()) {
+            return java.util.List.of();
+        }
+        return agentRunRepository.findByProjectIdOrderByCreatedAtAsc(projectId).stream()
+                .map(run -> {
+                    MutableAgentRun activeRun = runs.get(run.id());
+                    return activeRun == null ? toDetail(run) : activeRun.toDetail(sseHub.replay(run.id()));
+                })
+                .toList();
+    }
+
     public AgentRunControlResponse confirm(String runId, AgentRunControlRequest request) {
         MutableAgentRun run = requireRun(runId);
         synchronized (run.monitor) {
@@ -274,7 +286,7 @@ public class AgentRunService {
                     "character",
                     "角色一致性生成",
                     "running",
-                    new PositionResponse(680, 340),
+                    new PositionResponse(500, 120),
                     Map.of("sourceNodeId", scriptNode.id(), "step", "character")
             );
             addEdge(run, scriptNode.id(), characterNode.id());
@@ -290,7 +302,7 @@ public class AgentRunService {
                     "storyboard",
                     "分镜设计",
                     "running",
-                    new PositionResponse(1040, 340),
+                    new PositionResponse(920, 120),
                     Map.of("sourceNodeId", scriptNode.id(), "step", "storyboard")
             );
             addEdge(run, scriptNode.id(), storyboardNode.id());
@@ -303,7 +315,7 @@ public class AgentRunService {
                     "audio",
                     "生成音效配乐",
                     "running",
-                    new PositionResponse(680, 960),
+                    new PositionResponse(1340, 120),
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "audio")
             );
             addEdge(run, storyboardNode.id(), audioNode.id());
@@ -323,7 +335,7 @@ public class AgentRunService {
                     "final",
                     "成片合成",
                     "running",
-                    new PositionResponse(860, 1320),
+                    new PositionResponse(2180, 120),
                     Map.of("sourceNodeId", storyboardNode.id(), "step", "compose", "clipCount", shots.size())
             );
             addEdge(run, audioNode.id(), finalNode.id());
@@ -393,8 +405,8 @@ public class AgentRunService {
             List<ReferenceAsset> referenceAssets
     ) {
         VideoAgentOutput shotVisualOutput = visualOutputForShot(baseVisualOutput, shot);
-        PlannedFrame firstFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "first", "首帧", 500);
-        PlannedFrame lastFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "last", "尾帧", 860);
+        PlannedFrame firstFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "first", "首帧", 1340);
+        PlannedFrame lastFramePlan = planShotFrame(run, storyboardNode, shotVisualOutput, shot, "last", "尾帧", 1680);
         Future<Map<String, Object>> firstFrameFuture = mediaExecutorService.submit(() -> generateKeyframeAsset(run, request, firstFramePlan.node(), firstFramePlan.visualOutput(), referenceAssets));
         Future<Map<String, Object>> lastFrameFuture = mediaExecutorService.submit(() -> generateKeyframeAsset(run, request, lastFramePlan.node(), lastFramePlan.visualOutput(), referenceAssets));
         FrameResult firstFrame = completeShotFrame(run, firstFramePlan, firstFrameFuture);
@@ -405,7 +417,7 @@ public class AgentRunService {
                 "video",
                 shot.label() + " 视频片段",
                 "running",
-                new PositionResponse(1220, 660 + ((shot.index() - 1) * 220)),
+                new PositionResponse(2020, 560 + ((shot.index() - 1) * 300)),
                 Map.of("sourceNodeId", firstFrame.node().id(), "step", "shot-video", "shotIndex", shot.index())
         );
         addEdge(run, firstFrame.node().id(), videoNode.id());
@@ -491,7 +503,7 @@ public class AgentRunService {
                 "images",
                 shot.label() + " " + frameTitle,
                 "running",
-                new PositionResponse(x, 660 + ((shot.index() - 1) * 220)),
+                new PositionResponse(x, 560 + ((shot.index() - 1) * 300)),
                 Map.of("sourceNodeId", storyboardNode.id(), "step", frameKind + "-frame", "shotIndex", shot.index())
         );
         addEdge(run, storyboardNode.id(), frameNode.id());
@@ -697,110 +709,6 @@ public class AgentRunService {
             output.put("referenceAssets", referenceAssetOutput(referenceAssets));
         }
         return output;
-    }
-
-    private Map<String, Object> generateCharacterImageAssets(
-            MutableAgentRun run,
-            AgentRunRequest request,
-            String nodeId,
-            Map<String, Object> characterDesignOutput,
-            List<ReferenceAsset> referenceAssets
-    ) {
-        Map<String, Object> output = new java.util.LinkedHashMap<>(characterDesignOutput == null ? Map.of() : characterDesignOutput);
-        Object characters = output.get("characters");
-        if (!(characters instanceof List<?> items) || items.isEmpty()) {
-            output.put("imageGenerationStatus", "skipped");
-            output.put("imageGenerationError", "角色设计未返回可生成的角色列表。");
-            output.put("referenceAssets", referenceAssetOutput(referenceAssets));
-            return output;
-        }
-
-        java.util.ArrayList<Map<String, Object>> enrichedCharacters = new java.util.ArrayList<>();
-        java.util.ArrayList<Map<String, Object>> generatedImages = new java.util.ArrayList<>();
-        java.util.ArrayList<String> errors = new java.util.ArrayList<>();
-        List<String> referenceUrls = providerReferenceUrls(referenceAssets);
-
-        int index = 0;
-        for (Object item : items) {
-            Map<String, Object> character = new java.util.LinkedHashMap<>();
-            if (item instanceof Map<?, ?> source) {
-                source.forEach((key, value) -> {
-                    if (key instanceof String stringKey && value != null) {
-                        character.put(stringKey, value);
-                    }
-                });
-            } else if (item != null) {
-                character.put("name", "角色 " + (index + 1));
-                character.put("prompt", String.valueOf(item));
-            }
-
-            String name = stringValue(character, "name", "角色 " + (index + 1));
-            try {
-                ImageGenerationService.ImageResult image = imageGenerationService.generate(
-                        run.userId,
-                        characterImagePrompt(character, request, referenceAssets),
-                        referenceUrls,
-                        request.imageModelConfigId(),
-                        usageContext(run, nodeId, "agent.character-image")
-                );
-                AssetResponse asset = image.url().isBlank()
-                        ? assetService.createStoredAsset(run.projectId, run.canvasId, nodeId, "image", name + " 角色图", image.bytes(), image.contentType(), image.extension())
-                        : assetService.create(run.projectId, run.canvasId, nodeId, "image", name + " 角色图", image.url(), image.url());
-                publish(run.runId, "asset.created", Map.of("asset", asset));
-
-                java.util.ArrayList<String> images = new java.util.ArrayList<>();
-                Object existingImages = character.get("images");
-                if (existingImages instanceof List<?> existingItems) {
-                    existingItems.stream()
-                            .filter(String.class::isInstance)
-                            .map(String.class::cast)
-                            .filter(url -> !url.isBlank())
-                            .forEach(images::add);
-                }
-                images.add(asset.thumbnailUrl());
-                character.put("images", images);
-                character.put("assetId", asset.id());
-                character.put("thumbnailUrl", asset.thumbnailUrl());
-                character.put("imageUrl", asset.url());
-                character.put("imageGenerationStatus", "success");
-                character.putAll(image.metadata());
-
-                Map<String, Object> generated = new java.util.LinkedHashMap<>();
-                generated.put("name", name);
-                generated.put("assetId", asset.id());
-                generated.put("url", asset.url());
-                generated.put("thumbnailUrl", asset.thumbnailUrl());
-                generated.put("prompt", stringValue(character, "prompt", request.message()));
-                generated.putAll(image.metadata());
-                generatedImages.add(generated);
-            } catch (RuntimeException ex) {
-                String message = name + " 生成失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
-                errors.add(message);
-                character.put("imageGenerationStatus", "skipped");
-                character.put("imageGenerationError", message);
-            }
-            enrichedCharacters.add(character);
-            index++;
-        }
-
-        output.put("characters", enrichedCharacters);
-        output.put("characterImages", generatedImages);
-        output.put("imageGenerationErrors", errors);
-        output.put("imageGenerationStatus", generatedImages.isEmpty() ? "skipped" : errors.isEmpty() ? "success" : "partial_success");
-        output.put("referenceAssets", referenceAssetOutput(referenceAssets));
-        return output;
-    }
-
-    private static String characterImagePrompt(Map<String, Object> character, AgentRunRequest request, List<ReferenceAsset> referenceAssets) {
-        String name = stringValue(character, "name", "角色");
-        String prompt = stringValue(character, "prompt", stringValue(character, "description", request.message()));
-        String design = String.valueOf(character.getOrDefault("designSheet", ""));
-        return withReferenceBrief(withGenerationSettings("""
-                生成角色设定图：%s
-                角色提示词：%s
-                设计要求：%s
-                输出应突出单个角色主体，保持外观、服装、色彩和识别特征稳定，适合作为后续分镜关键帧参考。
-                """.formatted(name, prompt, design).trim(), request), referenceAssets);
     }
 
     private Map<String, Object> generateKeyframeAssetWithTimeout(

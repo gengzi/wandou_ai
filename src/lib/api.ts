@@ -754,6 +754,12 @@ export async function getAgentRun(runId: string): Promise<AgentRunDetailResponse
   return requestJson<AgentRunDetailResponse>(`/api/agent/runs/${runId}`);
 }
 
+export async function listAgentRuns(projectId: string): Promise<AgentRunDetailResponse[]> {
+  const url = new URL(apiUrl('/api/agent/runs'));
+  url.searchParams.set('projectId', projectId);
+  return requestJson<AgentRunDetailResponse[]>(url.toString());
+}
+
 export async function getConversation(conversationId: string): Promise<ConversationResponse> {
   return requestJson<ConversationResponse>(`/api/conversations/${conversationId}`);
 }

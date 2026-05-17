@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Share2, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
-import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
+import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType, ConnectionLineType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
-import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, ModelConfigResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getAuthToken, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAssets, listModelConfigs, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
+import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, ModelConfigResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getAuthToken, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAgentRuns, listAssets, listModelConfigs, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
 
 const nodeTypes = {
   script: ScriptNode,
@@ -42,6 +42,39 @@ const NODE_COLLISION_PADDING_X = 72;
 const NODE_COLLISION_PADDING_Y = 42;
 const NODE_RIGHT_GAP = 430;
 const NODE_LANE_STEP_Y = 310;
+const WORKFLOW_TOP_Y = 120;
+const WORKFLOW_TOP_STACK_GAP_Y = 620;
+const WORKFLOW_DETAIL_Y = 640;
+const WORKFLOW_DETAIL_GAP_Y = 360;
+const WORKFLOW_DETAIL_STACK_GAP_Y = 320;
+const DETAIL_NODE_RENDER_LIMIT = 18;
+const SHOT_NAV_WINDOW = 9;
+const WORKFLOW_COLUMNS = {
+  script: 80,
+  character: 500,
+  storyboard: 920,
+  audio: 1340,
+  firstFrame: 1340,
+  lastFrame: 1680,
+  video: 2020,
+  final: 2180,
+  misc: 2460,
+} as const;
+type WorkflowStage = keyof typeof WORKFLOW_COLUMNS;
+const WORKFLOW_DETAIL_STAGES = new Set<WorkflowStage>(['firstFrame', 'lastFrame', 'video']);
+
+interface WorkflowShotIndex {
+  shotIndexByNode: Map<string, number>;
+  maxStackByShot: Map<number, number>;
+}
+
+interface ShotSummary {
+  shotIndex: number;
+  nodeCount: number;
+  runningCount: number;
+  failedCount: number;
+  successCount: number;
+}
 
 function estimateNodeSize(node: Pick<Node, 'type'>): { width: number; height: number } {
   if (node.type === 'character') return { width: 380, height: 520 };
@@ -120,6 +153,110 @@ function normalizeCanvasNodes(nextNodes: Node[]): Node[] {
   }, []);
 }
 
+function nodeDataString(node: Node, key: string): string {
+  const value = node.data?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function nodeDataNumber(node: Node, key: string): number | undefined {
+  const value = node.data?.[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function workflowStage(node: Node): WorkflowStage {
+  const step = nodeDataString(node, 'step');
+  const type = nodeTypeName(node);
+  if (type === 'script') return 'script';
+  if (type === 'character') return 'character';
+  if (type === 'storyboard') return 'storyboard';
+  if (type === 'audio') return 'audio';
+  if (type === 'final') return 'final';
+  if (type === 'video') return 'video';
+  if (step === 'first-frame') return 'firstFrame';
+  if (step === 'last-frame') return 'lastFrame';
+  if (type === 'images') return 'firstFrame';
+  return 'misc';
+}
+
+function isDetailWorkflowNode(node: Node): boolean {
+  return WORKFLOW_DETAIL_STAGES.has(workflowStage(node));
+}
+
+function buildWorkflowShotIndex(nextNodes: Node[]): WorkflowShotIndex {
+  let fallbackShotIndex = 1;
+  const shotIndexByNode = new Map<string, number>();
+  const detailStageCounts = new Map<string, number>();
+  const maxStackByShot = new Map<number, number>();
+
+  nextNodes.forEach((node) => {
+    const stage = workflowStage(node);
+    if (!WORKFLOW_DETAIL_STAGES.has(stage)) return;
+    const explicitShotIndex = nodeDataNumber(node, 'shotIndex');
+    const shotIndex = explicitShotIndex && explicitShotIndex > 0 ? explicitShotIndex : fallbackShotIndex;
+    if (!explicitShotIndex) fallbackShotIndex += 1;
+    shotIndexByNode.set(node.id, shotIndex);
+    const key = `${shotIndex}:${stage}`;
+    const count = (detailStageCounts.get(key) || 0) + 1;
+    detailStageCounts.set(key, count);
+    maxStackByShot.set(shotIndex, Math.max(maxStackByShot.get(shotIndex) || 1, count));
+  });
+
+  return { shotIndexByNode, maxStackByShot };
+}
+
+function layoutCanvasNodesLeftToRight(nextNodes: Node[]): Node[] {
+  const workflowNodes = nextNodes.filter((node) => {
+    const type = nodeTypeName(node);
+    return ['script', 'character', 'storyboard', 'audio', 'images', 'video', 'final'].includes(type);
+  });
+  if (workflowNodes.length < 4) {
+    return normalizeCanvasNodes(nextNodes);
+  }
+
+  const { shotIndexByNode, maxStackByShot } = buildWorkflowShotIndex(nextNodes);
+
+  const orderedShots = Array.from(maxStackByShot.keys()).sort((left, right) => left - right);
+  const shotLaneY = new Map<number, number>();
+  orderedShots.reduce((cursorY, shotIndex) => {
+    shotLaneY.set(shotIndex, cursorY);
+    const laneHeight = Math.max(WORKFLOW_DETAIL_GAP_Y, (maxStackByShot.get(shotIndex) || 1) * WORKFLOW_DETAIL_STACK_GAP_Y);
+    return cursorY + laneHeight;
+  }, WORKFLOW_DETAIL_Y);
+
+  const topStageCounters = new Map<WorkflowStage, number>();
+  const detailStageCounters = new Map<string, number>();
+  const arranged = nextNodes.map((node) => {
+    const stage = workflowStage(node);
+    let position: { x: number; y: number };
+
+    if (WORKFLOW_DETAIL_STAGES.has(stage)) {
+      const shotIndex = shotIndexByNode.get(node.id) || 1;
+      const key = `${shotIndex}:${stage}`;
+      const stackIndex = detailStageCounters.get(key) || 0;
+      detailStageCounters.set(key, stackIndex + 1);
+      position = {
+        x: WORKFLOW_COLUMNS[stage],
+        y: (shotLaneY.get(shotIndex) || WORKFLOW_DETAIL_Y) + stackIndex * WORKFLOW_DETAIL_STACK_GAP_Y,
+      };
+    } else {
+      const stageIndex = topStageCounters.get(stage) || 0;
+      topStageCounters.set(stage, stageIndex + 1);
+      position = {
+        x: WORKFLOW_COLUMNS[stage],
+        y: WORKFLOW_TOP_Y + stageIndex * WORKFLOW_TOP_STACK_GAP_Y,
+      };
+    }
+
+    return { ...node, position };
+  });
+  return arranged;
+}
+
 function nextNodePositionNear(basePosition: { x: number; y: number }, type: string | undefined, existingNodes: Node[]) {
   const candidate = {
     id: '__candidate__',
@@ -153,6 +290,7 @@ interface MessageMedia {
 
 interface RestoredProjectContext {
   messageCount: number;
+  processCount: number;
   nodeCount: number;
   assetCount: number;
   taskCount: number;
@@ -575,13 +713,57 @@ function toFlowEdge(edge: CanvasEdgeResponse): Edge {
     target: edge.target,
     type: 'default',
     animated: false,
-    interactionWidth: 18,
-    style: { stroke: '#64748b', strokeWidth: 1.35, opacity: 0.62 },
+    interactionWidth: 22,
+    style: { stroke: '#64748b', strokeWidth: 1.6, opacity: 0.46 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: '#64748b',
-      width: 14,
-      height: 14,
+      width: 11,
+      height: 11,
+    },
+  };
+}
+
+function nodeTypeName(node?: Node): string {
+  return typeof node?.type === 'string' ? node.type : '';
+}
+
+function isCoreWorkflowEdge(
+  edge: Edge,
+  nodeTypeById: Map<string, string>,
+  hasCharacterStoryboardEdge: boolean,
+  hasAudioFinalEdge: boolean
+): boolean {
+  const sourceType = nodeTypeById.get(edge.source) || '';
+  const targetType = nodeTypeById.get(edge.target) || '';
+  if (sourceType === 'script' && targetType === 'character') return true;
+  if (sourceType === 'character' && targetType === 'storyboard') return true;
+  if (sourceType === 'storyboard' && targetType === 'audio') return true;
+  if (sourceType === 'audio' && targetType === 'final') return true;
+  if (!hasCharacterStoryboardEdge && sourceType === 'script' && targetType === 'storyboard') return true;
+  if (!hasAudioFinalEdge && sourceType === 'storyboard' && targetType === 'final') return true;
+  return false;
+}
+
+function presentCanvasEdge(edge: Edge, options: { primary: boolean; focused: boolean; muted: boolean }): Edge {
+  const color = options.focused ? '#34d399' : options.primary ? '#8fb3d9' : '#5b6f8a';
+  const opacity = options.focused ? 0.95 : options.primary ? 0.72 : options.muted ? 0.38 : 0.48;
+  return {
+    ...edge,
+    type: 'default',
+    animated: options.focused,
+    interactionWidth: options.focused ? 28 : 22,
+    zIndex: options.focused ? 10 : options.primary ? 4 : 1,
+    style: {
+      stroke: color,
+      strokeWidth: options.focused ? 2.5 : options.primary ? 1.8 : 1.15,
+      opacity,
+    },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color,
+      width: options.focused ? 15 : 10,
+      height: options.focused ? 15 : 10,
     },
   };
 }
@@ -594,6 +776,120 @@ function toMessage(message: ConversationResponse['messages'][number]): Message {
     content: message.content,
     timestamp: new Date(message.createdAt),
   };
+}
+
+function processMessagesFromRun(run: AgentRunDetailResponse): Message[] {
+  const completedSteps = new Set((run.events || [])
+    .filter((event) => event.event === 'agent.step.completed')
+    .map((event) => String(event.data?.step || ''))
+    .filter(Boolean));
+  return (run.events || []).flatMap((event): Message[] => {
+    const data = event.data || {};
+    const timestamp = new Date(event.createdAt);
+    if (event.event === 'message.delta') {
+      return [{
+        id: `history-delta-${event.runId}-${event.id}`,
+        sender: getString(data.sender, run.agentName, '创作助手'),
+        role: 'agent',
+        content: getString(data.content, data.delta, '正在分析你的创作需求...'),
+        timestamp,
+        kind: 'process',
+        status: 'success',
+      }];
+    }
+    if (event.event === 'agent.step.started') {
+      if (completedSteps.has(String(data.step || ''))) {
+        return [];
+      }
+      return [{
+        id: `history-step-start-${event.runId}-${String(data.step || event.id)}`,
+        sender: getString(data.agentName, run.agentName, '创作助手'),
+        role: 'agent',
+        content: `开始：${getString(data.title, data.step)}\n正在读取上下文、调用模型并整理结构化输出...`,
+        timestamp,
+        kind: 'process',
+        status: 'running',
+      }];
+    }
+    if (event.event === 'agent.step.completed') {
+      const step = String(data.step || event.id);
+      const output = (data.output && typeof data.output === 'object') ? data.output as Record<string, unknown> : {};
+      return [{
+        id: `history-step-${event.runId}-${step}`,
+        sender: getString(data.agentName, run.agentName, '创作助手'),
+        role: 'agent',
+        content: formatStepOutput(getString(data.title, step), getString(data.content), output),
+        timestamp,
+        kind: 'process',
+        status: 'success',
+      }];
+    }
+    if (event.event === 'agent.confirmation.required') {
+      return [{
+        id: `history-confirmation-${event.runId}-${String(data.checkpoint || event.id)}`,
+        sender: '系统',
+        role: 'agent',
+        content: getString(data.message, '请确认后继续。'),
+        timestamp,
+        kind: 'process',
+        status: run.status === 'waiting_confirmation' ? 'running' : 'success',
+      }];
+    }
+    if (event.event === 'agent.confirmation.accepted') {
+      return [{
+        id: `history-confirmed-${event.runId}-${event.id}`,
+        sender: '系统',
+        role: 'agent',
+        content: '已确认，继续生成。',
+        timestamp,
+        kind: 'process',
+        status: 'success',
+      }];
+    }
+    if (event.event === 'task.failed') {
+      const task = data.task && typeof data.task === 'object' ? data.task as Record<string, unknown> : {};
+      return [{
+        id: `history-task-failed-${event.runId}-${getString(task.id, event.id)}`,
+        sender: '系统',
+        role: 'agent',
+        content: `任务失败：${getString(task.message, data.message, '节点任务执行失败。')}`,
+        timestamp,
+        kind: 'process',
+        status: 'failed',
+      }];
+    }
+    if (event.event === 'run.failed') {
+      return [{
+        id: `history-run-failed-${event.runId}`,
+        sender: '系统',
+        role: 'agent',
+        content: `失败：${getString(data.error, data.message, run.error, '本次生成失败。')}`,
+        timestamp,
+        kind: 'process',
+        status: 'failed',
+      }];
+    }
+    if (event.event === 'run.completed') {
+      return [{
+        id: `history-run-completed-${event.runId}`,
+        sender: '系统',
+        role: 'agent',
+        content: '本次智能体流程已完成。',
+        timestamp,
+        kind: 'process',
+        status: 'success',
+      }];
+    }
+    return [];
+  });
+}
+
+function mergeRestoredMessages(conversationMessages: Message[], runs: AgentRunDetailResponse[]): Message[] {
+  const byId = new Map<string, Message>();
+  [...conversationMessages, ...runs.flatMap(processMessagesFromRun)].forEach((message) => {
+    byId.set(message.id, message);
+  });
+  return [...byId.values()].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
 }
 
 function toTask(task: TaskResponse): TaskItem {
@@ -749,6 +1045,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [runDetail, setRunDetail] = useState<AgentRunDetailResponse | null>(null);
   const [scriptEdit, setScriptEdit] = useState<ScriptEditState | null>(null);
   const [activeCanvasSection, setActiveCanvasSection] = useState<CanvasSection>('总览');
+  const [expandedShotIndex, setExpandedShotIndex] = useState<number | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -788,6 +1085,66 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const latestRunSettingsSummary = settingsSummary(latestRunParameters);
   const selectedNodeSettingsSummary = settingsSummary(selectedNodeParameters);
   const selectedNodeError = nodeErrorText(selectedNodeOutput);
+  const workflowShotIndex = useMemo(() => buildWorkflowShotIndex(nodes), [nodes]);
+  const detailNodeCount = workflowShotIndex.shotIndexByNode.size;
+  const performanceCanvasMode = detailNodeCount > DETAIL_NODE_RENDER_LIMIT;
+  const shotSummaries = useMemo<ShotSummary[]>(() => {
+    const summaries = new Map<number, ShotSummary>();
+    nodes.forEach((node) => {
+      const shotIndex = workflowShotIndex.shotIndexByNode.get(node.id);
+      if (!shotIndex) return;
+      const current = summaries.get(shotIndex) || {
+        shotIndex,
+        nodeCount: 0,
+        runningCount: 0,
+        failedCount: 0,
+        successCount: 0,
+      };
+      const status = String(node.data?.status || '');
+      current.nodeCount += 1;
+      if (status === 'running') current.runningCount += 1;
+      if (status === 'failed') current.failedCount += 1;
+      if (status === 'success') current.successCount += 1;
+      summaries.set(shotIndex, current);
+    });
+    return Array.from(summaries.values()).sort((left, right) => left.shotIndex - right.shotIndex);
+  }, [nodes, workflowShotIndex]);
+  const visibleShotSummaries = useMemo(() => {
+    if (shotSummaries.length <= SHOT_NAV_WINDOW) return shotSummaries;
+    const activeIndex = Math.max(0, shotSummaries.findIndex((shot) => shot.shotIndex === expandedShotIndex));
+    const half = Math.floor(SHOT_NAV_WINDOW / 2);
+    const start = Math.min(Math.max(0, activeIndex - half), Math.max(0, shotSummaries.length - SHOT_NAV_WINDOW));
+    return shotSummaries.slice(start, start + SHOT_NAV_WINDOW);
+  }, [expandedShotIndex, shotSummaries]);
+  const visibleCanvasNodes = useMemo(() => {
+    if (!performanceCanvasMode) return nodes;
+    return nodes.filter((node) => {
+      const shotIndex = workflowShotIndex.shotIndexByNode.get(node.id);
+      if (!shotIndex) return true;
+      return expandedShotIndex === shotIndex;
+    });
+  }, [expandedShotIndex, nodes, performanceCanvasMode, workflowShotIndex]);
+  const visibleNodeIds = useMemo(() => new Set(visibleCanvasNodes.map((node) => node.id)), [visibleCanvasNodes]);
+  const nodeTypeById = useMemo(() => new Map(nodes.map((node) => [node.id, nodeTypeName(node)])), [nodes]);
+  const canvasEdges = useMemo(() => {
+    const hasCharacterStoryboardEdge = edges.some((edge) =>
+      nodeTypeById.get(edge.source) === 'character' && nodeTypeById.get(edge.target) === 'storyboard'
+    );
+    const hasAudioFinalEdge = edges.some((edge) =>
+      nodeTypeById.get(edge.source) === 'audio' && nodeTypeById.get(edge.target) === 'final'
+    );
+    return edges
+      .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+      .map((edge) => {
+        const primary = isCoreWorkflowEdge(edge, nodeTypeById, hasCharacterStoryboardEdge, hasAudioFinalEdge);
+        const focused = Boolean(selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId));
+        return presentCanvasEdge(edge, {
+          primary,
+          focused,
+          muted: !primary && !focused,
+        });
+      });
+  }, [edges, nodeTypeById, selectedNodeId, visibleNodeIds]);
 
   const openScriptEditor = useCallback((nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId);
@@ -924,10 +1281,11 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
     setActiveCanvasSection(sectionForNode(node));
+    setExpandedShotIndex(workflowShotIndex.shotIndexByNode.get(node.id) || null);
     const output = node.data?.output as Record<string, unknown> | undefined;
     const prompt = typeof output?.prompt === 'string' ? output.prompt : '';
     setNodeInstruction(prompt);
-  }, []);
+  }, [workflowShotIndex]);
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
@@ -937,6 +1295,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
     setActiveCanvasSection(section);
     if (section === '总览') {
       setSelectedNodeId(null);
+      setExpandedShotIndex(null);
       flowInstance?.fitView({ duration: 450, padding: 0.22 });
       return;
     }
@@ -956,6 +1315,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
 
     setSetupError(null);
     setSelectedNodeId(preferred.id);
+    setExpandedShotIndex(workflowShotIndex.shotIndexByNode.get(preferred.id) || null);
     const output = preferred.data?.output as Record<string, unknown> | undefined;
     setNodeInstruction(typeof output?.prompt === 'string' ? output.prompt : '');
     flowInstance?.setCenter(
@@ -963,11 +1323,12 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       preferred.position.y + 130,
       { duration: 450, zoom: section === '视频' ? 0.78 : 0.9 }
     );
-  }, [flowInstance, nodes]);
+  }, [flowInstance, nodes, workflowShotIndex]);
 
   const applyCanvas = useCallback((canvas: CanvasResponse) => {
-    setNodes(normalizeCanvasNodes(canvas.nodes.map(toFlowNode)));
+    setNodes(layoutCanvasNodesLeftToRight(canvas.nodes.map(toFlowNode)));
     setEdges(canvas.edges.map(toFlowEdge));
+    setExpandedShotIndex(null);
   }, [setEdges, setNodes]);
 
   useEffect(() => {
@@ -989,17 +1350,20 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             });
         if (cancelled) return;
         setProject(nextProject);
-        const [canvas, conversation, nextTasks, nextAssets] = await Promise.all([
+        const [canvas, conversation, nextTasks, nextAssets, restoredRuns] = await Promise.all([
           getCanvas(nextProject.canvasId),
           getConversation(nextProject.conversationId),
           listTasks(nextProject.id),
           listAssets(nextProject.id),
+          listAgentRuns(nextProject.id).catch(() => []),
         ]);
         if (cancelled) return;
         applyCanvas(canvas);
         setTasks(nextTasks.map(toTask));
         setAssets(nextAssets.map(toAsset));
-        const nextMessages = conversation.messages.map(toMessage);
+        const conversationMessages = conversation.messages.map(toMessage);
+        const processMessages = restoredRuns.flatMap(processMessagesFromRun);
+        const nextMessages = mergeRestoredMessages(conversationMessages, restoredRuns);
         const latestUserMessage = [...nextMessages].reverse().find((message) => message.role === 'user');
         setLastCreativePrompt(latestUserMessage?.content || initialPrompt || nextProject.description || '');
         setMessages(nextMessages.length > 0
@@ -1014,6 +1378,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
         if (projectId) {
           setRestoredContext({
             messageCount: conversation.messages.length,
+            processCount: processMessages.length,
             nodeCount: canvas.nodes.length,
             assetCount: nextAssets.length,
             taskCount: nextTasks.length,
@@ -1658,9 +2023,12 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   };
 
   const handleMagicCanvasTool = () => {
-    flowInstance?.fitView({ padding: 0.24, duration: 320 });
+    setNodes((current) => layoutCanvasNodesLeftToRight(current));
+    window.requestAnimationFrame(() => {
+      flowInstance?.fitView({ padding: 0.24, duration: 320 });
+    });
     handleDraftPrompt();
-    setNotice('已整理画布视图，并生成可编辑的创作指令草稿。');
+    setNotice('已按从左到右的流程整理画布，并生成可编辑的创作指令草稿。');
   };
 
   const handleAddCanvasNode = async () => {
@@ -1957,6 +2325,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
                 <span>{restoredContext.messageCount} 条对话</span>
+                <span>{restoredContext.processCount} 条过程</span>
                 <span>{restoredContext.nodeCount} 个画布节点</span>
                 <span>{restoredContext.assetCount} 个素材</span>
                 <span>{restoredContext.taskCount} 个任务</span>
@@ -2272,7 +2641,7 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     <div className="absolute inset-0">
                       <ReactFlow
                         nodes={nodes}
-                        edges={edges}
+                        edges={canvasEdges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
                         onConnect={onConnect}
@@ -2283,6 +2652,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                         onPaneClick={handlePaneClick}
                         onInit={setFlowInstance}
                         nodeTypes={nodeTypes}
+                        connectionLineType={ConnectionLineType.Bezier}
+                        connectionLineStyle={{ stroke: '#34d399', strokeWidth: 1.8, opacity: 0.85 }}
                         minZoom={0.1}
                         maxZoom={2}
                         defaultViewport={{ x: 20, y: 28, zoom: 0.62 }}

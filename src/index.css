@@ -174,6 +174,27 @@
   background: transparent !important;
 }
 
+.canvas-dot-surface .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(11, 12, 14, 0.9);
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.13), 0 0 18px rgba(52, 211, 153, 0.28);
+}
+
+.canvas-dot-surface .react-flow__handle-left {
+  left: -5px;
+}
+
+.canvas-dot-surface .react-flow__handle-right {
+  right: -5px;
+}
+
+.canvas-dot-surface .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 :root[data-theme="light"] .wandou-workspace {
   color: #334155;
 }
