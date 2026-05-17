@@ -155,6 +155,23 @@ curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/assets?proj
 npm run smoke:backend
 ```
 
+## 配置生图模型
+
+设置 `WANDOU_AI_SILICONFLOW_API_KEY` 后，后端启动时会为管理员账号自动新增并启用 `SiliconFlow Kolors` 生图模型：
+
+```bash
+export WANDOU_AI_SILICONFLOW_API_KEY="你的 SiliconFlow API Key"
+```
+
+Docker Compose 会把 `.env` 中的同名变量传给后端。该模型使用 OpenAI 兼容生图接口，配置为：
+
+| 字段 | 值 |
+| --- | --- |
+| 服务商 | `siliconflow` |
+| 接口地址 | `https://api.siliconflow.cn` |
+| 模型名称 | `Kwai-Kolors/Kolors` |
+| 兼容模式 | `openai` |
+
 `/api/chat` 会调用 Gemini。只浏览页面和测试 Spring Boot mock 接口不需要配置密钥；如果要测试聊天代理，请在启动前设置：
 
 ```bash

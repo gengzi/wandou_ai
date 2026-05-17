@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BadgePlus,
   Box,
   Clock3,
   FileAudio,
@@ -29,11 +28,13 @@ import {
   getAuthToken,
   listAssets,
   listAssetsPage,
-  listProjects,
+  listProjectsPage,
   ProjectResponse,
   updateAsset,
   uploadAsset,
 } from '../lib/api';
+
+const PROJECT_FOLDER_PAGE_SIZE = 8;
 
 const assetTabs = [
   { id: 'all', label: '全部' },
@@ -45,33 +46,6 @@ const assetTabs = [
   { id: 'derivative', label: '衍生品' },
   { id: 'model', label: '3D模型' },
   { id: 'print', label: '打印文件' },
-];
-
-const creationCards = [
-  {
-    type: 'character',
-    title: '创建新角色',
-    description: '沉淀角色设定、三视图、表情、动作姿态，后续视频和衍生品都能复用。',
-    icon: Sparkles,
-  },
-  {
-    type: 'scene',
-    title: '创建新场景',
-    description: '保存环境概念图、道具、空间风格，用作分镜和故事短片的视觉资产。',
-    icon: ImageIcon,
-  },
-  {
-    type: 'derivative',
-    title: '创建衍生品',
-    description: '基于角色生成短袖印花、贴纸、海报、徽章等可售卖素材。',
-    icon: Shirt,
-  },
-  {
-    type: 'model',
-    title: '创建3D模型',
-    description: '登记角色模型、手办模型或 GLB/OBJ/STL 文件，支持后续打印导出。',
-    icon: Box,
-  },
 ];
 
 const typeLabels: Record<string, string> = {
@@ -118,6 +92,71 @@ const withAssetAuthQuery = (url: string) => {
   nextUrl.searchParams.set('Authorization', `Bearer ${token}`);
   return nextUrl.pathname + nextUrl.search;
 };
+
+const isPreviewableUrl = (url: string) => (
+  url.startsWith('/api/')
+  || url.startsWith('http://')
+  || url.startsWith('https://')
+  || url.startsWith('data:')
+);
+
+const assetIcon = (type: string, size = 24) => {
+  switch (type) {
+    case 'folder': return <Folder className="text-blue-400" size={size} />;
+    case 'video': return <FileVideo className="text-brand" size={size} />;
+    case 'image': return <ImageIcon className="text-purple-400" size={size} />;
+    case 'audio': return <FileAudio className="text-yellow-400" size={size} />;
+    case 'character': return <Sparkles className="text-pink-400" size={size} />;
+    case 'scene': return <ImageIcon className="text-cyan-400" size={size} />;
+    case 'derivative': return <Shirt className="text-lime-300" size={size} />;
+    case 'model': return <Box className="text-orange-300" size={size} />;
+    case 'print': return <Printer className="text-emerald-300" size={size} />;
+    default: return <FileText className="text-slate-400" size={size} />;
+  }
+};
+
+function AssetThumbnail({ asset }: { asset: AssetResponse }) {
+  const [failed, setFailed] = useState(false);
+  const rawThumbnail = asset.thumbnailUrl || (asset.type === 'image' ? asset.url : '');
+  const thumbnailUrl = rawThumbnail && isPreviewableUrl(rawThumbnail) ? withAssetAuthQuery(rawThumbnail) : '';
+  const videoUrl = asset.type === 'video' && asset.url && isPreviewableUrl(asset.url) ? withAssetAuthQuery(asset.url) : '';
+  const canRender = !failed && (thumbnailUrl || videoUrl);
+
+  return (
+    <div className="relative h-12 w-[76px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#171719] shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+      {canRender ? (
+        asset.type === 'video' ? (
+          <video
+            src={videoUrl}
+            poster={thumbnailUrl || undefined}
+            preload="metadata"
+            muted
+            playsInline
+            onError={() => setFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <img
+            src={thumbnailUrl}
+            alt={asset.name}
+            loading="lazy"
+            onError={() => setFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        )
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-white/[0.03]">
+          {assetIcon(asset.type, 22)}
+        </div>
+      )}
+      {asset.type === 'video' && (
+        <div className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur">
+          <FileVideo size={12} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ProjectFolderCardProps {
   title: string;
@@ -221,6 +260,10 @@ function NewProjectFolderCard({ onClick }: { onClick: () => void }) {
 export default function AssetsView() {
   const [assets, setAssets] = useState<AssetResponse[]>([]);
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [projectFolderPage, setProjectFolderPage] = useState(0);
+  const [projectFolderTotal, setProjectFolderTotal] = useState(0);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [hasMoreProjects, setHasMoreProjects] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -239,12 +282,11 @@ export default function AssetsView() {
   });
   const [loadingPage, setLoadingPage] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetResponse | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const foldersRef = useRef<HTMLElement>(null);
+  const foldersRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState({
     projectId: '',
     canvasId: '',
@@ -278,16 +320,41 @@ export default function AssetsView() {
     return grouped;
   }, [assets]);
 
+  const loadProjectFolders = useCallback((pageToLoad: number, replace = false) => {
+    setLoadingProjects(true);
+    return listProjectsPage(pageToLoad, PROJECT_FOLDER_PAGE_SIZE)
+      .then((nextPage) => {
+        setProjectFolderPage(nextPage.page);
+        setProjectFolderTotal(nextPage.totalElements);
+        setHasMoreProjects(nextPage.page + 1 < nextPage.totalPages);
+        setProjects((current) => {
+          const merged = replace ? nextPage.content : [...current, ...nextPage.content];
+          return Array.from(new Map(merged.map((project) => [project.id, project])).values());
+        });
+      })
+      .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '项目文件夹加载失败'))
+      .finally(() => setLoadingProjects(false));
+  }, []);
+
   const refresh = () => {
-    Promise.all([listProjects(), listAssets()])
-      .then(([nextProjects, nextAssets]) => {
-        setProjects(nextProjects);
+    setProjectFolderPage(0);
+    setProjectFolderTotal(0);
+    setHasMoreProjects(true);
+    Promise.all([loadProjectFolders(0, true), listAssets()])
+      .then(([, nextAssets]) => {
         setAssets(nextAssets);
-        if (selectedProjectId !== 'all' && selectedProjectId !== 'unassigned' && !nextProjects.some((project) => project.id === selectedProjectId)) {
-          setSelectedProjectId('all');
-        }
       })
       .catch((nextError) => setError(nextError instanceof Error ? nextError.message : '素材加载失败'));
+  };
+
+  const handleProjectFolderScroll = () => {
+    const container = foldersRef.current;
+    if (!container || loadingProjects || !hasMoreProjects) return;
+    if (container.scrollLeft < 24) return;
+    const distanceToEnd = container.scrollWidth - container.scrollLeft - container.clientWidth;
+    if (distanceToEnd < 360) {
+      void loadProjectFolders(projectFolderPage + 1);
+    }
   };
 
   const refreshPage = (pageOverride = page, projectIdOverride = selectedProjectId) => {
@@ -336,21 +403,6 @@ export default function AssetsView() {
       nodeId: '',
       type: 'image',
       name: '',
-      url: '',
-      thumbnailUrl: '',
-    });
-    setEditingAssetId(null);
-    setShowCreateForm(true);
-  };
-
-  const openCreateTypedAsset = (type: string, name = '') => {
-    const project = activeProject || projects[0] || null;
-    setForm({
-      projectId: project?.id || '',
-      canvasId: project?.canvasId || '',
-      nodeId: '',
-      type,
-      name,
       url: '',
       thumbnailUrl: '',
     });
@@ -498,18 +550,7 @@ export default function AssetsView() {
   };
 
   const getIcon = (type: string) => {
-    switch (type) {
-      case 'folder': return <Folder className="text-blue-400" size={24} />;
-      case 'video': return <FileVideo className="text-brand" size={24} />;
-      case 'image': return <ImageIcon className="text-purple-400" size={24} />;
-      case 'audio': return <FileAudio className="text-yellow-400" size={24} />;
-      case 'character': return <Sparkles className="text-pink-400" size={24} />;
-      case 'scene': return <ImageIcon className="text-cyan-400" size={24} />;
-      case 'derivative': return <Shirt className="text-lime-300" size={24} />;
-      case 'model': return <Box className="text-orange-300" size={24} />;
-      case 'print': return <Printer className="text-emerald-300" size={24} />;
-      default: return <FileText className="text-slate-400" size={24} />;
-    }
+    return assetIcon(type);
   };
 
   const projectLabel = (projectId: string) => projectById.get(projectId)?.name || (projectId ? `项目 ${projectId}` : '未归档');
@@ -538,70 +579,28 @@ export default function AssetsView() {
               <Folder size={16} />
               <span>项目文件夹</span>
             </button>
-            <div className="relative">
-              <button
-                onClick={() => setCreateMenuOpen((open) => !open)}
-                className="flex items-center space-x-2 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white shadow-lg shadow-brand/20 transition-colors hover:bg-brand/90"
-                aria-expanded={createMenuOpen}
-              >
-                <BadgePlus size={16} />
-                <span>资产控制</span>
-              </button>
-              {createMenuOpen && (
-                <div className="absolute right-0 top-full z-30 mt-2 w-[320px] overflow-hidden rounded-2xl border border-white/10 bg-[#121213] p-2 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-                  <div className="px-2 pb-2 pt-1">
-                    <div className="text-[11px] font-bold text-slate-200">创建与管理</div>
-                    <div className="mt-1 text-[10px] text-slate-500">选择资产类型后登记到当前项目素材库。</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setCreateMenuOpen(false);
-                      openCreateForm();
-                    }}
-                    className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-brand">
-                      <Upload size={16} />
-                    </div>
-                    <span className="min-w-0">
-                      <span className="block text-[12px] font-bold text-slate-100">登记或上传素材</span>
-                      <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">手动添加 URL，或在表单中上传文件。</span>
-                    </span>
-                  </button>
-                  <div className="my-1 h-px bg-white/[0.06]" />
-                  {creationCards.map((card) => {
-                    const Icon = card.icon;
-                    return (
-                      <button
-                        key={card.type}
-                        onClick={() => {
-                          setCreateMenuOpen(false);
-                          openCreateTypedAsset(card.type);
-                        }}
-                        className="flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
-                      >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-brand">
-                          <Icon size={16} />
-                        </div>
-                        <span className="min-w-0">
-                          <span className="block text-[12px] font-bold text-slate-100">{card.title}</span>
-                          <span className="mt-0.5 block line-clamp-2 text-[10px] leading-4 text-slate-500">{card.description}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={openCreateForm}
+              className="flex items-center space-x-2 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white shadow-lg shadow-brand/20 transition-colors hover:bg-brand/90"
+            >
+              <Upload size={16} />
+              <span>上传素材</span>
+            </button>
           </div>
         </header>
 
-        <section ref={foldersRef} className="mb-8 overflow-hidden bg-bg-dark px-2 py-3">
+        <section className="mb-8 overflow-hidden bg-bg-dark px-2 py-3">
           <div className="mb-1 flex items-center justify-between px-1">
             <h2 className="text-sm font-semibold text-white">项目文件夹</h2>
-            <span className="text-xs text-slate-500">按项目聚合素材，横向滚动查看</span>
+            <span className="text-xs text-slate-500">
+              已加载 {projects.length}{projectFolderTotal ? ` / ${projectFolderTotal}` : ''} 个项目，横向滚动加载更多
+            </span>
           </div>
-          <div className="flex items-start gap-8 overflow-x-auto pb-6">
+          <div
+            ref={foldersRef}
+            onScroll={handleProjectFolderScroll}
+            className="flex items-start gap-8 overflow-x-auto pb-6"
+          >
             <NewProjectFolderCard onClick={openCreateForm} />
 
             <ProjectFolderCard
@@ -634,6 +633,23 @@ export default function AssetsView() {
                 previews={previewsFor('unassigned')}
                 onClick={() => setSelectedProjectId('unassigned')}
               />
+            )}
+
+            {loadingProjects && (
+              <div className="flex h-[252px] w-[180px] shrink-0 flex-col items-center justify-center text-center text-xs text-slate-500">
+                <div className="mb-3 h-12 w-12 animate-pulse rounded-2xl border border-white/10 bg-white/5" />
+                加载项目中...
+              </div>
+            )}
+
+            {!loadingProjects && hasMoreProjects && (
+              <button
+                type="button"
+                onClick={() => loadProjectFolders(projectFolderPage + 1)}
+                className="flex h-[252px] w-[180px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 text-xs font-semibold text-slate-500 transition-colors hover:border-brand/35 hover:bg-brand/5 hover:text-brand"
+              >
+                加载更多项目
+              </button>
             )}
           </div>
         </section>
@@ -775,9 +791,9 @@ export default function AssetsView() {
                 </tr>
               ) : filteredAssets.length > 0 ? filteredAssets.map((asset) => (
                 <tr key={asset.id} onClick={() => openAsset(asset.id)} className="group cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04]">
-                  <td className="px-6 py-2.5 flex items-center space-x-3">
-                    {getIcon(asset.type)}
-                    <div>
+                  <td className="flex items-center space-x-3 px-6 py-2.5">
+                    <AssetThumbnail asset={asset} />
+                    <div className="min-w-0">
                       <div className="text-xs font-medium text-slate-200 transition-colors group-hover:text-brand">{asset.name}</div>
                       <div className="text-xs text-slate-500">{typeLabel(asset.type)}</div>
                     </div>

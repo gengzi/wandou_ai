@@ -278,7 +278,11 @@ public class AgentRunService {
                     Map.of("sourceNodeId", scriptNode.id(), "step", "character")
             );
             addEdge(run, scriptNode.id(), characterNode.id());
-            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", normalizedStepOutput(enrichCharacterOutput(characterOutput.output(), referenceAssets), request, "character"));
+            Map<String, Object> characterDesignOutput = normalizedStepOutput(enrichCharacterOutput(characterOutput.output(), referenceAssets), request, "character");
+            CanvasNodeResponse plannedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "running", characterDesignOutput);
+            publishNodeUpdated(run, plannedCharacterNode);
+            Map<String, Object> characterMediaOutput = generateCharacterImageAssets(run, request, characterNode.id(), characterDesignOutput, referenceAssets);
+            CanvasNodeResponse updatedCharacterNode = canvasService.updateNode(run.canvasId, characterNode.id(), "success", characterMediaOutput);
             publishNodeUpdated(run, updatedCharacterNode);
 
             CanvasNodeResponse storyboardNode = addNode(run,
@@ -695,6 +699,110 @@ public class AgentRunService {
         return output;
     }
 
+    private Map<String, Object> generateCharacterImageAssets(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            String nodeId,
+            Map<String, Object> characterDesignOutput,
+            List<ReferenceAsset> referenceAssets
+    ) {
+        Map<String, Object> output = new java.util.LinkedHashMap<>(characterDesignOutput == null ? Map.of() : characterDesignOutput);
+        Object characters = output.get("characters");
+        if (!(characters instanceof List<?> items) || items.isEmpty()) {
+            output.put("imageGenerationStatus", "skipped");
+            output.put("imageGenerationError", "角色设计未返回可生成的角色列表。");
+            output.put("referenceAssets", referenceAssetOutput(referenceAssets));
+            return output;
+        }
+
+        java.util.ArrayList<Map<String, Object>> enrichedCharacters = new java.util.ArrayList<>();
+        java.util.ArrayList<Map<String, Object>> generatedImages = new java.util.ArrayList<>();
+        java.util.ArrayList<String> errors = new java.util.ArrayList<>();
+        List<String> referenceUrls = providerReferenceUrls(referenceAssets);
+
+        int index = 0;
+        for (Object item : items) {
+            Map<String, Object> character = new java.util.LinkedHashMap<>();
+            if (item instanceof Map<?, ?> source) {
+                source.forEach((key, value) -> {
+                    if (key instanceof String stringKey && value != null) {
+                        character.put(stringKey, value);
+                    }
+                });
+            } else if (item != null) {
+                character.put("name", "角色 " + (index + 1));
+                character.put("prompt", String.valueOf(item));
+            }
+
+            String name = stringValue(character, "name", "角色 " + (index + 1));
+            try {
+                ImageGenerationService.ImageResult image = imageGenerationService.generate(
+                        run.userId,
+                        characterImagePrompt(character, request, referenceAssets),
+                        referenceUrls,
+                        request.imageModelConfigId(),
+                        usageContext(run, nodeId, "agent.character-image")
+                );
+                AssetResponse asset = image.url().isBlank()
+                        ? assetService.createStoredAsset(run.projectId, run.canvasId, nodeId, "image", name + " 角色图", image.bytes(), image.contentType(), image.extension())
+                        : assetService.create(run.projectId, run.canvasId, nodeId, "image", name + " 角色图", image.url(), image.url());
+                publish(run.runId, "asset.created", Map.of("asset", asset));
+
+                java.util.ArrayList<String> images = new java.util.ArrayList<>();
+                Object existingImages = character.get("images");
+                if (existingImages instanceof List<?> existingItems) {
+                    existingItems.stream()
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .filter(url -> !url.isBlank())
+                            .forEach(images::add);
+                }
+                images.add(asset.thumbnailUrl());
+                character.put("images", images);
+                character.put("assetId", asset.id());
+                character.put("thumbnailUrl", asset.thumbnailUrl());
+                character.put("imageUrl", asset.url());
+                character.put("imageGenerationStatus", "success");
+                character.putAll(image.metadata());
+
+                Map<String, Object> generated = new java.util.LinkedHashMap<>();
+                generated.put("name", name);
+                generated.put("assetId", asset.id());
+                generated.put("url", asset.url());
+                generated.put("thumbnailUrl", asset.thumbnailUrl());
+                generated.put("prompt", stringValue(character, "prompt", request.message()));
+                generated.putAll(image.metadata());
+                generatedImages.add(generated);
+            } catch (RuntimeException ex) {
+                String message = name + " 生成失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+                errors.add(message);
+                character.put("imageGenerationStatus", "skipped");
+                character.put("imageGenerationError", message);
+            }
+            enrichedCharacters.add(character);
+            index++;
+        }
+
+        output.put("characters", enrichedCharacters);
+        output.put("characterImages", generatedImages);
+        output.put("imageGenerationErrors", errors);
+        output.put("imageGenerationStatus", generatedImages.isEmpty() ? "skipped" : errors.isEmpty() ? "success" : "partial_success");
+        output.put("referenceAssets", referenceAssetOutput(referenceAssets));
+        return output;
+    }
+
+    private static String characterImagePrompt(Map<String, Object> character, AgentRunRequest request, List<ReferenceAsset> referenceAssets) {
+        String name = stringValue(character, "name", "角色");
+        String prompt = stringValue(character, "prompt", stringValue(character, "description", request.message()));
+        String design = String.valueOf(character.getOrDefault("designSheet", ""));
+        return withReferenceBrief(withGenerationSettings("""
+                生成角色设定图：%s
+                角色提示词：%s
+                设计要求：%s
+                输出应突出单个角色主体，保持外观、服装、色彩和识别特征稳定，适合作为后续分镜关键帧参考。
+                """.formatted(name, prompt, design).trim(), request), referenceAssets);
+    }
+
     private Map<String, Object> generateKeyframeAssetWithTimeout(
             MutableAgentRun run,
             AgentRunRequest request,
@@ -722,6 +830,109 @@ public class AgentRunService {
         output.put("imageGenerationStatus", "skipped");
         output.put("imageGenerationError", message);
         return output;
+    }
+
+    private Map<String, Object> generateCharacterImageAssets(
+            MutableAgentRun run,
+            AgentRunRequest request,
+            String nodeId,
+            Map<String, Object> output,
+            List<ReferenceAsset> referenceAssets
+    ) {
+        Object charactersValue = output.get("characters");
+        if (!(charactersValue instanceof List<?> characters) || characters.isEmpty()) {
+            return output;
+        }
+        Map<String, Object> next = new java.util.LinkedHashMap<>(output);
+        java.util.ArrayList<Map<String, Object>> enrichedCharacters = new java.util.ArrayList<>();
+        java.util.ArrayList<String> errors = new java.util.ArrayList<>();
+        int generatedCount = 0;
+        int skippedCount = 0;
+        int index = 0;
+        List<String> referenceUrls = providerReferenceUrls(referenceAssets);
+
+        for (Object item : characters) {
+            if (!(item instanceof Map<?, ?> character)) {
+                continue;
+            }
+            Map<String, Object> enriched = new java.util.LinkedHashMap<>();
+            character.forEach((key, value) -> {
+                if (key instanceof String stringKey && value != null) {
+                    enriched.put(stringKey, value);
+                }
+            });
+            if (hasCharacterImages(enriched)) {
+                skippedCount++;
+                enrichedCharacters.add(enriched);
+                index++;
+                continue;
+            }
+            String name = mapString(enriched, "name", mapString(enriched, "title", "角色" + (index + 1)));
+            String prompt = characterImagePrompt(name, enriched, request);
+            try {
+                ImageGenerationService.ImageResult image = imageGenerationService.generate(
+                        run.userId,
+                        prompt,
+                        referenceUrls,
+                        request.imageModelConfigId(),
+                        usageContext(run, nodeId, "agent.character-image")
+                );
+                AssetResponse asset = image.url().isBlank()
+                        ? assetService.createStoredAsset(run.projectId, run.canvasId, nodeId, "image", name + " 角色设定图", image.bytes(), image.contentType(), image.extension())
+                        : assetService.create(run.projectId, run.canvasId, nodeId, "image", name + " 角色设定图", image.url(), image.url());
+                publish(run.runId, "asset.created", Map.of("asset", asset));
+                Map<String, Object> imageItem = new java.util.LinkedHashMap<>();
+                imageItem.put("assetId", asset.id());
+                imageItem.put("url", asset.url());
+                imageItem.put("thumbnailUrl", asset.thumbnailUrl());
+                imageItem.put("prompt", prompt);
+                imageItem.putAll(image.metadata());
+                enriched.put("images", List.of(imageItem));
+                enriched.put("url", asset.url());
+                enriched.put("thumbnailUrl", asset.thumbnailUrl());
+                generatedCount++;
+            } catch (RuntimeException ex) {
+                String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+                errors.add(name + "：" + message);
+                enriched.put("imageGenerationError", message);
+            }
+            enrichedCharacters.add(enriched);
+            index++;
+        }
+        next.put("characters", enrichedCharacters);
+        if (!errors.isEmpty()) {
+            next.put("imageGenerationErrors", errors);
+        }
+        if (generatedCount > 0) {
+            next.put("imageGenerationStatus", errors.isEmpty() ? "success" : "partial_success");
+        } else if (!errors.isEmpty()) {
+            next.put("imageGenerationStatus", "failed");
+        } else if (skippedCount > 0) {
+            next.put("imageGenerationStatus", "reused");
+        }
+        return next;
+    }
+
+    private static boolean hasCharacterImages(Map<String, Object> character) {
+        return hasText(mapString(character, "url", ""))
+                || hasText(mapString(character, "thumbnailUrl", ""))
+                || hasText(mapString(character, "imageUrl", ""))
+                || character.get("images") instanceof List<?> images && !images.isEmpty()
+                || character.get("variants") instanceof List<?> variants && !variants.isEmpty();
+    }
+
+    private static String characterImagePrompt(String name, Map<String, Object> character, AgentRunRequest request) {
+        String prompt = mapString(character, "prompt", mapString(character, "description", ""));
+        String designSheet = String.valueOf(character.getOrDefault("designSheet", ""));
+        return """
+                为角色一致性资产生成一张专业角色设定图。
+                角色名称：%s
+                角色设定：%s
+                设计要求：%s
+                画面要求：三视图或角色设定拼版，包含正面、侧面、背面/关键动作，干净背景，角色比例、配色、服装、面部结构保持一致，适合后续关键帧和衍生品复用。
+                输出风格：清晰、完整、可作为生产参考图。
+                画面比例：%s
+                """.formatted(name, prompt, designSheet, configuredAspectRatio(request)).trim();
     }
 
     private VideoGenerationStatus skipVideoGeneration(MutableAgentRun run, TaskResponse task, CanvasNodeResponse videoNode, String error) {
@@ -1105,10 +1316,10 @@ public class AgentRunService {
                     .plan(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.script"))
                     .require(VideoAgentStep.SCRIPT)
                     .output();
-            case "character" -> enrichCharacterOutput(videoAgentRuntime
+            case "character" -> generateCharacterImageAssets(run, request, node.id(), enrichCharacterOutput(videoAgentRuntime
                     .design(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.character"))
                     .require(VideoAgentStep.CHARACTER)
-                    .output(), referenceAssets);
+                    .output(), referenceAssets), referenceAssets);
             case "storyboard" -> videoAgentRuntime
                     .design(run.userId, prompt, listener, request.textModelConfigId(), usageContext(run, node.id(), "node.regenerate.storyboard"))
                     .require(VideoAgentStep.STORYBOARD)

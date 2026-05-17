@@ -6,8 +6,11 @@ import com.wandou.ai.common.IdGenerator;
 import com.wandou.ai.conversation.ConversationService;
 import com.wandou.ai.conversation.dto.ConversationResponse;
 import com.wandou.ai.project.dto.ProjectCreateRequest;
+import com.wandou.ai.project.dto.ProjectPageResponse;
 import com.wandou.ai.project.dto.ProjectResponse;
 import com.wandou.ai.project.dto.ProjectUpdateRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +55,19 @@ public class ProjectService {
         return projectRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public ProjectPageResponse page(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(30, Math.max(6, size));
+        Page<ProjectEntity> result = projectRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(safePage, safeSize));
+        return new ProjectPageResponse(
+                result.getContent().stream().map(this::toResponse).toList(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.getNumber(),
+                result.getSize()
+        );
     }
 
     public Optional<ProjectResponse> get(String projectId) {

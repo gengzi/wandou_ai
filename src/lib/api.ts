@@ -38,6 +38,26 @@ export interface AgentRunDetailResponse {
   updatedAt: string;
 }
 
+export interface ReplayRunResponse {
+  runId: string;
+  status: string;
+  agentName: string;
+  message: string;
+  error?: string;
+  checkpoint?: string;
+  events: SseEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectReplayResponse {
+  project: ProjectResponse;
+  conversation: ConversationResponse;
+  canvas: CanvasResponse;
+  tasks: TaskResponse[];
+  runs: ReplayRunResponse[];
+}
+
 export interface AgentRunMonitorResponse {
   runId: string;
   status: string;
@@ -73,6 +93,14 @@ export interface ProjectResponse {
   canvasId: string;
   conversationId: string;
   createdAt: string;
+}
+
+export interface ProjectPageResponse {
+  content: ProjectResponse[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
 }
 
 export interface CanvasPosition {
@@ -434,8 +462,16 @@ export async function listProjects(): Promise<ProjectResponse[]> {
   return requestJson<ProjectResponse[]>('/api/projects');
 }
 
+export async function listProjectsPage(page = 0, size = 12): Promise<ProjectPageResponse> {
+  return requestJson<ProjectPageResponse>(`/api/projects/page?page=${page}&size=${size}`);
+}
+
 export async function getProject(projectId: string): Promise<ProjectResponse> {
   return requestJson<ProjectResponse>(`/api/projects/${projectId}`);
+}
+
+export async function getPublicReplay(projectId: string): Promise<ProjectReplayResponse> {
+  return requestJson<ProjectReplayResponse>(`/api/public/replays/${projectId}`);
 }
 
 export async function createProject(payload: {

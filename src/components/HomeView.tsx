@@ -3,15 +3,19 @@ import {
   ArrowUp,
   BadgeHelp,
   Bot,
+  Box,
+  ChevronDown,
   ChevronRight,
   Clapperboard,
   Film,
+  Image as ImageIcon,
   Layers3,
   MessageSquareText,
   Moon,
   Paperclip,
   Pencil,
   Plus,
+  Shirt,
   Sparkles,
   Sun,
   Video,
@@ -35,6 +39,7 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [notice, setNotice] = useState('');
+  const [assetMenuOpen, setAssetMenuOpen] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [referenceProjectId, setReferenceProjectId] = useState<string | undefined>();
   const [referencePreviewUrl, setReferencePreviewUrl] = useState('');
@@ -154,6 +159,38 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
     { label: t('home.quick.storyboard'), icon: Film },
   ];
 
+  const assetGenerationActions = [
+    {
+      title: '创建新角色',
+      description: '生成角色设定、三视图、表情和动作姿态，沉淀为可复用资产。',
+      icon: Sparkles,
+      prompt: '创建一个可复用角色资产：先提出 3 个角色方向供我选择，再生成角色设定、三视图描述、表情、动作姿态和后续视频复用说明。',
+    },
+    {
+      title: '创建新场景',
+      description: '生成环境概念、道具、空间风格和分镜可用视觉参考。',
+      icon: ImageIcon,
+      prompt: '创建一个可复用场景资产：先确认故事用途和空间风格，再生成场景设定、环境概念、关键道具、镜头氛围和后续分镜复用说明。',
+    },
+    {
+      title: '生成衍生品',
+      description: '基于角色生成短袖印花、贴纸、海报和徽章等商品视觉。',
+      icon: Shirt,
+      prompt: '基于已有或新建角色生成衍生品方案：先确认角色，再生成短袖印花、贴纸、海报、徽章的视觉方向、提示词和生产资产清单。',
+    },
+    {
+      title: '生成3D模型',
+      description: '基于角色生成手办或角色模型方案，输出多视角和材质要求。',
+      icon: Box,
+      prompt: '基于角色生成 3D 模型资产方案：先确认角色形象，再生成手办或角色模型的建模说明、多视角参考、材质设定和可导出 GLB/OBJ/STL 的需求清单。',
+    },
+  ];
+
+  const startAssetGeneration = (nextPrompt: string) => {
+    setAssetMenuOpen(false);
+    onNavigate(nextPrompt);
+  };
+
   const highlights = [
     { title: t('home.highlight.agent.title'), desc: t('home.highlight.agent.desc'), icon: Bot },
     { title: t('home.highlight.assets.title'), desc: t('home.highlight.assets.desc'), icon: Video },
@@ -211,6 +248,61 @@ export default function HomeView({ onNavigate, currentUser }: HomeViewProps) {
             <BadgeHelp size={16} />
             {t('home.faq')}
           </button>
+          <div
+            className="relative"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setAssetMenuOpen(false);
+              }
+            }}
+          >
+            <button
+              onClick={() => setAssetMenuOpen((open) => !open)}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
+                isLight ? 'border border-emerald-100 bg-white/70 text-slate-800 shadow-sm hover:bg-white' : 'bg-white/5 text-slate-200 hover:bg-white/10'
+              }`}
+              aria-expanded={assetMenuOpen}
+              aria-haspopup="menu"
+            >
+              <Sparkles size={16} className="text-brand" />
+              生成资产
+              <ChevronDown size={14} className={`text-slate-500 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {assetMenuOpen && (
+              <div className={`absolute right-0 top-full z-40 mt-2 w-[340px] overflow-hidden rounded-2xl border p-2 shadow-[0_24px_80px_rgba(0,0,0,0.24)] ${
+                isLight ? 'border-emerald-100 bg-white/95 text-slate-900 backdrop-blur' : 'border-white/10 bg-[#121213]/95 text-slate-100 backdrop-blur'
+              }`}>
+                <div className="px-2 pb-2 pt-1">
+                  <div className="text-[11px] font-bold text-brand">智能体生成</div>
+                  <div className={`mt-1 text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
+                    角色、场景、衍生品和 3D 模型由工作区流程生成。
+                  </div>
+                </div>
+                {assetGenerationActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      key={action.title}
+                      onClick={() => startAssetGeneration(action.prompt)}
+                      className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors ${
+                        isLight ? 'hover:bg-emerald-50' : 'hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-brand ${
+                        isLight ? 'border-emerald-100 bg-emerald-50' : 'border-white/10 bg-white/5'
+                      }`}>
+                        <Icon size={16} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className={`block text-[12px] font-bold ${isLight ? 'text-slate-900' : 'text-slate-100'}`}>{action.title}</span>
+                        <span className="mt-0.5 block line-clamp-2 text-[10px] leading-4 text-slate-500">{action.description}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setNotice(t('home.joinNotice'))}
             className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:bg-brand/90"

@@ -19,6 +19,10 @@ import java.util.Set;
 public class UserDataInitializer implements ApplicationRunner {
 
     private static final String DEFAULT_PASSWORD = "Wandou@123456";
+    private static final String ADMIN_USER_ID = "usr_admin";
+    private static final String SILICONFLOW_KOLORS_CONFIG_ID = "model_cfg_siliconflow_kolors";
+    private static final String SILICONFLOW_KOLORS_BASE_URL = "https://api.siliconflow.cn";
+    private static final String SILICONFLOW_KOLORS_MODEL = "Kwai-Kolors/Kolors";
 
     private final PermissionRepository permissionRepository;
     private final RoleRepository roleRepository;
@@ -65,10 +69,11 @@ public class UserDataInitializer implements ApplicationRunner {
                 .toList());
         roleRepository.saveAll(List.of(admin, editor, viewer));
 
-        createUserIfMissing("usr_admin", "Wandou Admin", "admin@wandou.ai", Set.of(admin));
+        createUserIfMissing(ADMIN_USER_ID, "Wandou Admin", "admin@wandou.ai", Set.of(admin));
         createUserIfMissing("usr_editor", "Wandou Editor", "editor@wandou.ai", Set.of(editor));
         createUserIfMissing("usr_viewer", "Wandou Viewer", "viewer@wandou.ai", Set.of(viewer));
         createTestModelConfigsIfNeeded();
+        createSiliconFlowKolorsConfigIfConfigured();
     }
 
     private Permission permission(String code, String name) {
@@ -105,11 +110,41 @@ public class UserDataInitializer implements ApplicationRunner {
             return;
         }
         Instant now = Instant.now();
-        if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc("usr_admin", "text").isEmpty()) {
-            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_text", "usr_admin", "text", "test", "Test Text Model", "mock://text", "test-text", "openai", "test-key", true, now, now));
+        if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc(ADMIN_USER_ID, "text").isEmpty()) {
+            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_text", ADMIN_USER_ID, "text", "test", "Test Text Model", "mock://text", "test-text", "openai", "test-key", true, now, now));
         }
-        if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc("usr_admin", "image").isEmpty()) {
-            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_image", "usr_admin", "image", "test", "Test Image Model", "mock://image", "test-image", "openai", "test-key", true, now, now));
+        if (modelConfigRepository.findFirstByUserIdAndCapabilityAndEnabledTrueOrderByUpdatedAtDesc(ADMIN_USER_ID, "image").isEmpty()) {
+            modelConfigRepository.save(new ModelConfigEntity("model_cfg_test_image", ADMIN_USER_ID, "image", "test", "Test Image Model", "mock://image", "test-image", "openai", "test-key", true, now, now));
         }
+    }
+
+    private void createSiliconFlowKolorsConfigIfConfigured() {
+        String apiKey = configuredValue("wandou.ai.siliconflow.api-key", "WANDOU_AI_SILICONFLOW_API_KEY");
+        if (apiKey.isBlank() || modelConfigRepository.existsById(SILICONFLOW_KOLORS_CONFIG_ID)) {
+            return;
+        }
+        Instant now = Instant.now();
+        modelConfigRepository.save(new ModelConfigEntity(
+                SILICONFLOW_KOLORS_CONFIG_ID,
+                ADMIN_USER_ID,
+                "image",
+                "siliconflow",
+                "SiliconFlow Kolors",
+                SILICONFLOW_KOLORS_BASE_URL,
+                SILICONFLOW_KOLORS_MODEL,
+                "openai",
+                apiKey,
+                true,
+                now,
+                now
+        ));
+    }
+
+    private String configuredValue(String propertyName, String environmentName) {
+        String propertyValue = environment.getProperty(propertyName, "");
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            return propertyValue.trim();
+        }
+        return environment.getProperty(environmentName, "").trim();
     }
 }

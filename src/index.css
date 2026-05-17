@@ -240,7 +240,6 @@
   color: #94a3b8 !important;
 }
 
-:root[data-theme="light"] .wandou-model-select,
 :root[data-theme="light"] .wandou-floating-panel,
 :root[data-theme="light"] .wandou-canvas-toolbar,
 :root[data-theme="light"] .wandou-node-config-panel,
@@ -251,8 +250,22 @@
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.10);
 }
 
-:root[data-theme="light"] .wandou-model-select select {
+:root[data-theme="light"] .wandou-model-select > button,
+:root[data-theme="light"] .wandou-model-menu {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #334155 !important;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.10);
+}
+
+:root[data-theme="light"] .wandou-model-select > button [class*="text-slate-200"],
+:root[data-theme="light"] .wandou-model-menu [class*="text-slate-300"],
+:root[data-theme="light"] .wandou-model-menu [class*="text-slate-100"] {
   color: #0f172a !important;
+}
+
+:root[data-theme="light"] .wandou-model-menu [class*="text-slate-500"] {
+  color: #64748b !important;
 }
 
 :root[data-theme="light"] .wandou-canvas-nav :is(.text-slate-400, .text-slate-300) {
@@ -722,15 +735,4 @@
   :root[data-theme="light"] .wandou-background-stars {
     opacity: 0.18;
   }
-}
-
-:root[data-theme="light"] .wandou-model-help-tooltip {
-  background: rgba(255, 255, 255, 0.96) !important;
-  border-color: rgba(148, 163, 184, 0.36) !important;
-  color: #334155 !important;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12) !important;
-}
-
-:root[data-theme="light"] .wandou-model-help-tooltip [class*="text-yellow-200"] {
-  color: #a16207 !important;
 }

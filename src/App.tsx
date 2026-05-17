@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar.tsx';
 import HomeView from './components/HomeView.tsx';
 import WorkspaceView from './components/WorkspaceView.tsx';
+import ReplayView from './components/ReplayView.tsx';
 import AssetsView from './components/AssetsView.tsx';
 import UsersView from './components/UsersView.tsx';
 import ModelSettingsView from './components/ModelSettingsView.tsx';
@@ -15,13 +16,19 @@ import { useI18n } from './lib/i18n.tsx';
 
 export default function App() {
   const { t } = useI18n();
+  const initialReplayProjectId = new URLSearchParams(window.location.search).get('replayProjectId') || '';
   const [view, setView] = useState<string>('home');
   const [initialPrompt, setInitialPrompt] = useState('');
   const [workspaceProjectId, setWorkspaceProjectId] = useState<string | undefined>();
+  const [publicReplayProjectId] = useState(initialReplayProjectId);
   const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
-  const [checkingSession, setCheckingSession] = useState(Boolean(getAuthToken()));
+  const [checkingSession, setCheckingSession] = useState(Boolean(getAuthToken()) && !initialReplayProjectId);
 
   useEffect(() => {
+    if (publicReplayProjectId) {
+      return;
+    }
+
     const sharedProjectId = new URLSearchParams(window.location.search).get('projectId');
     if (sharedProjectId) {
       setWorkspaceProjectId(sharedProjectId);
@@ -36,7 +43,7 @@ export default function App() {
       .then(setCurrentUser)
       .catch(() => clearAuthToken())
       .finally(() => setCheckingSession(false));
-  }, []);
+  }, [publicReplayProjectId]);
 
   const openWorkspace = (prompt?: string, projectId?: string) => {
     if (prompt?.trim()) {
@@ -62,6 +69,10 @@ export default function App() {
 
   if (checkingSession) {
     return <AppLoadingView message={t('app.restoreSession')} />;
+  }
+
+  if (publicReplayProjectId) {
+    return <ReplayView projectId={publicReplayProjectId} />;
   }
 
   if (!currentUser) {

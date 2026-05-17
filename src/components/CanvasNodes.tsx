@@ -171,6 +171,8 @@ export const CharacterNode = ({ id, data }: any) => {
   const title = data?.title || '角色一致性生成';
   const status = data?.status || 'idle';
   const characters = Array.isArray(data?.output?.characters) ? data.output.characters : [];
+  const imageErrors = Array.isArray(data?.output?.imageGenerationErrors) ? data.output.imageGenerationErrors : [];
+  const nodeImageError = getString(data?.output?.imageGenerationError, imageErrors.join('；'));
 
   return (
     <div className="w-[360px] bg-[#111112] rounded-xl border border-white/10 shadow-2xl overflow-hidden cursor-default group hover:border-white/20 transition-colors">
@@ -195,8 +197,9 @@ export const CharacterNode = ({ id, data }: any) => {
       </div>
       <div className={`p-3 ${characters.length > 1 ? 'grid grid-cols-2 gap-3' : 'space-y-3'}`}>
           {characters.length > 0 ? characters.slice(0, 4).map((character: any, characterIndex: number) => {
-            const images = getImageUrls(character.images, character.variants, character.thumbnailUrl, character.imageUrl, character.url).slice(0, 4);
+            const images = getImageUrls(character.images, character.variants, character.thumbnailUrl, character.imageUrl, character.url).map(withAuthQuery).slice(0, 4);
             const designSheet = toArray(character.designSheet).slice(0, 4);
+            const characterImageError = getString(character.imageGenerationError, nodeImageError);
             return (
               <div key={character.id || character.name || characterIndex} className="space-y-4">
                 <div className="flex items-baseline justify-between gap-3">
@@ -234,7 +237,7 @@ export const CharacterNode = ({ id, data }: any) => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState>角色图像尚未生成。</EmptyState>
+                  <EmptyState>{characterImageError ? `角色图像生成失败：${characterImageError}` : '角色图像尚未生成。'}</EmptyState>
                 )}
               </div>
             );

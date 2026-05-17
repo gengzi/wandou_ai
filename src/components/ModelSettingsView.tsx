@@ -94,6 +94,18 @@ export default function ModelSettingsView() {
       });
       return;
     }
+    if (provider === 'siliconflow') {
+      setForm({
+        ...form,
+        capability: 'image',
+        provider,
+        displayName: 'SiliconFlow Kolors',
+        baseUrl: 'https://api.siliconflow.cn',
+        modelName: 'Kwai-Kolors/Kolors',
+        compatibilityMode: 'openai',
+      });
+      return;
+    }
     setForm({ ...form, provider });
   };
 
@@ -154,14 +166,11 @@ export default function ModelSettingsView() {
               <h1 className="text-2xl font-bold text-white">模型配置</h1>
               <button
                 type="button"
-                className="group relative flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand/30"
                 aria-label="模型配置说明"
+                title="每个用户维护自己的模型接入；当前版本只保存配置，不执行连接测试。"
               >
                 <CircleHelp size={15} />
-                <span className="wandou-model-help-tooltip pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-[340px] -translate-x-1/2 rounded-xl border border-white/10 bg-[#171719]/95 p-3 text-left text-xs leading-5 text-slate-300 shadow-2xl backdrop-blur group-hover:block group-focus:block">
-                  每个用户维护自己的模型接入。优先使用兼容接口的地址、密钥、模型名三件套。
-                  <span className="mt-2 block text-yellow-200/80">当前版本只保存配置，不执行连接测试；保存后请通过工作区生成链路验证模型可用性。</span>
-                </span>
               </button>
             </div>
           </div>
@@ -318,6 +327,7 @@ export default function ModelSettingsView() {
               className="wandou-page-control w-full rounded-lg border border-white/10 bg-[#1A1A1C] px-3 py-2 text-sm outline-none focus:border-brand/50"
             >
               <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="siliconflow">SiliconFlow Kolors</option>
               <option value="pollinations">Pollinations 免费生图</option>
               <option value="qingyun">青云接口</option>
               <option value="deepseek">DeepSeek</option>

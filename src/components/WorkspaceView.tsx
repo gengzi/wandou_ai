@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Share2, Play, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
+import { Share2, Plus, Wand2, Video, MessageSquare, MousePointer2, Send, ImagePlus, Settings2, RefreshCw, CheckCircle2, PauseCircle, XCircle, X, ChevronDown } from 'lucide-react';
 import { ReactFlow, useNodesState, useEdgesState, addEdge, ReactFlowProvider, Node, Edge, Connection, MiniMap, ReactFlowInstance, MarkerType } from '@xyflow/react';
 import { ScriptNode, CharacterNode, StoryboardNode, ImagesNode, AudioNode, FinalVideoNode } from './CanvasNodes';
 import { AgentRunDetailResponse, AssetResponse, CanvasEdgeResponse, CanvasNodeResponse, CanvasResponse, ConversationResponse, GenerationResponse, ModelConfigResponse, TaskResponse, UsageSummaryResponse, cancelAgentRun, confirmAgentRun, createCanvasEdge, createCanvasNode, createProject, createRunEventSource, deleteCanvasEdge, deleteCanvasNode, generateChat, generateImage, generateVideo, getAgentRun, getAuthToken, getCanvas, getConversation, getMyUsage, getProject, getTask, interruptAgentRun, listAssets, listModelConfigs, listTasks, ProjectResponse, resumeAgentRun, SseEvent, startAgentRun, updateCanvasNodeOutput, updateCanvasNodePosition, uploadAsset } from '../lib/api';
@@ -204,23 +204,73 @@ const defaultGenerationSettings: GenerationSettings = {
 };
 
 function ChatModelSelect({ label, value, configs, onChange }: ChatModelSelectProps) {
+  const [open, setOpen] = useState(false);
+  const selectedConfig = configs.find((config) => config.id === value);
+  const selectedLabel = selectedConfig?.displayName || selectedConfig?.modelName || '默认';
+  const options = [
+    { id: '', label: '默认', meta: '使用系统默认模型' },
+    ...configs.map((config) => ({
+      id: config.id,
+      label: config.displayName || config.modelName,
+      meta: config.modelName,
+    })),
+  ];
+
   return (
-    <label className="wandou-model-select relative flex min-w-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2 py-1 text-[10px] text-slate-400">
-      <span className="shrink-0 text-slate-500">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="max-w-[116px] appearance-none truncate bg-transparent pr-4 text-[10px] font-semibold text-slate-200 outline-none"
+    <div
+      className="wandou-model-select relative min-w-[160px] text-[10px]"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2 text-left text-slate-400 transition-colors hover:border-brand/30 hover:bg-white/[0.06]"
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
-        <option value="">默认</option>
-        {configs.map((config) => (
-          <option key={config.id} value={config.id}>
-            {config.displayName || config.modelName}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500" size={12} />
-    </label>
+      <span className="shrink-0 text-slate-500">{label}</span>
+        <span className="min-w-0 flex-1 truncate font-semibold text-slate-200">{selectedLabel}</span>
+        <ChevronDown className={`shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} size={12} />
+      </button>
+      {open && (
+        <div
+          className="wandou-model-menu absolute left-0 top-full z-50 mt-1.5 max-h-60 w-[260px] overflow-y-auto rounded-xl border border-white/10 bg-[#18191B]/95 p-1.5 shadow-2xl backdrop-blur"
+          role="listbox"
+        >
+          {options.map((option) => {
+            const selected = option.id === value;
+            return (
+              <button
+                key={option.id || 'default'}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(option.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                  selected
+                    ? 'bg-brand/15 text-brand'
+                    : 'text-slate-300 hover:bg-white/[0.06] hover:text-slate-100'
+                }`}
+                role="option"
+                aria-selected={selected}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-semibold">{option.label}</span>
+                  <span className="block truncate text-[9px] text-slate-500">{option.meta}</span>
+                </span>
+                {selected && <CheckCircle2 size={13} className="shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -252,7 +302,7 @@ function GenerationSettingsPanel({
                 onClick={() => patch({ aspectRatio: ratio })}
                 className={`flex min-w-0 flex-col items-center gap-1 rounded-lg px-1.5 py-2 text-[11px] font-semibold transition-colors ${
                   settings.aspectRatio === ratio
-                    ? 'bg-white text-slate-950 shadow-sm'
+                    ? 'border border-brand/30 bg-brand/15 text-brand shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                     : 'text-slate-400 hover:bg-white/10 hover:text-slate-100'
                 }`}
               >
@@ -279,7 +329,7 @@ function GenerationSettingsPanel({
                 onClick={() => patch({ resolution })}
                 className={`h-9 rounded-lg text-[12px] font-bold transition-colors ${
                   settings.resolution === resolution
-                    ? 'bg-white text-slate-950 shadow-sm'
+                    ? 'border border-brand/30 bg-brand/15 text-brand shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                     : 'text-slate-400 hover:bg-white/10 hover:text-slate-100'
                 }`}
               >
@@ -323,10 +373,16 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
     <div className="flex items-center justify-between gap-3">
       <span className="text-[12px] font-semibold text-slate-200">{label}</span>
       <button
+        type="button"
         onClick={() => onChange(!value)}
-        className={`relative h-7 w-12 rounded-full transition-colors ${value ? 'bg-brand' : 'bg-white/10'}`}
+        aria-pressed={value}
+        className={`relative h-7 w-12 rounded-full border transition-colors ${
+          value ? 'border-brand/40 bg-brand/35' : 'border-white/10 bg-white/10'
+        }`}
       >
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-1'}`} />
+        <span className={`absolute left-1 top-1 h-5 w-5 rounded-full shadow transition-transform ${
+          value ? 'translate-x-5 bg-brand' : 'translate-x-0 bg-slate-300'
+        }`} />
       </button>
     </div>
   );
@@ -681,13 +737,14 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
   const [stepOutputs, setStepOutputs] = useState<Record<string, StepOutputState>>({});
   const [setupError, setSetupError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [usageSummary, setUsageSummary] = useState<UsageSummaryResponse | null>(null);
   const [modelConfigs, setModelConfigs] = useState<ModelConfigResponse[]>([]);
   const [selectedTextModelId, setSelectedTextModelId] = useState('');
   const [selectedImageModelId, setSelectedImageModelId] = useState('');
   const [selectedVideoModelId, setSelectedVideoModelId] = useState('');
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(defaultGenerationSettings);
-  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+  const [generationSettingsOpen, setGenerationSettingsOpen] = useState(false);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskResponse | null>(null);
   const [runDetail, setRunDetail] = useState<AgentRunDetailResponse | null>(null);
   const [scriptEdit, setScriptEdit] = useState<ScriptEditState | null>(null);
@@ -1665,31 +1722,31 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
       setNotice('已定位到视频节点。');
       return;
     }
-    setNotice('当前还没有视频任务。输入视频指令或点击播放启动完整流程。');
+    setNotice('当前还没有视频任务。输入视频指令后会在这里同步生成任务上下文。');
   };
 
-  const handleShareProject = async () => {
+  const handleOpenShareDialog = () => {
     if (!project) {
-      setSetupError('项目尚未初始化，无法生成分享链接。');
+      setSetupError('项目尚未初始化，无法分享回放。');
       return;
     }
-    const shareUrl = `${window.location.origin}${window.location.pathname}?projectId=${encodeURIComponent(project.id)}`;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setNotice('项目链接已复制。登录用户打开后会进入同一个项目工作区。');
-    } catch {
-      setInputValue((current) => current || shareUrl);
-      setNotice('浏览器未允许写入剪贴板，已把项目链接放到输入框。');
-    }
+    setShareDialogOpen(true);
   };
 
-  const handlePlayWorkflow = async () => {
-    if (activeRunId && runStatus !== 'success' && runStatus !== 'failed' && runStatus !== 'cancelled') {
-      setNotice('智能体流程正在运行，可在左侧查看过程或使用打断/取消。');
+  const handleShareReplay = async () => {
+    if (!project) {
+      setSetupError('项目尚未初始化，无法生成回放链接。');
       return;
     }
-    const prompt = inputValue.trim() || lastCreativePrompt.trim() || `生成一个 ${generationSettings.aspectRatio}、${generationSettings.durationSeconds}s、${generationSettings.resolution.toUpperCase()} 的完整短视频，包含剧本、多个角色设定、分镜、关键帧、逐镜头视频、配音/音效设计和最终成片。`;
-    await runAgent(prompt, { mode: 'full-workflow' });
+    const replayUrl = `${window.location.origin}${window.location.pathname}?replayProjectId=${encodeURIComponent(project.id)}`;
+    try {
+      await navigator.clipboard.writeText(replayUrl);
+      setShareDialogOpen(false);
+      setNotice('历史回放链接已复制。未登录用户也可以打开查看分享人的完整对话流程。');
+    } catch {
+      setInputValue((current) => current || replayUrl);
+      setNotice('浏览器未允许写入剪贴板，已把历史回放链接放到输入框，也可以在分享弹窗中手动复制。');
+    }
   };
 
   const handleSendMessage = async () => {
@@ -1867,11 +1924,8 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
              </button>
 
              {/* Share */}
-             <button onClick={handleShareProject} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors" title="复制项目链接" aria-label="复制项目链接">
+             <button onClick={handleOpenShareDialog} disabled={!project} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[12px] font-medium hover:bg-white/10 transition-colors disabled:cursor-not-allowed disabled:opacity-50" title="分享历史回放" aria-label="分享历史回放">
                 <Share2 size={14} className="opacity-80" />
-             </button>
-             <button onClick={handlePlayWorkflow} disabled={isTyping} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-[12px] font-medium text-white shadow-[0_0_10px_rgba(16,185,129,0.2)] hover:bg-brand/90 transition-colors disabled:cursor-not-allowed disabled:opacity-50" title="启动完整流程" aria-label="启动完整流程">
-                <Play size={14} className="fill-white" />
              </button>
           </div>
         </header>
@@ -2141,8 +2195,28 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                   </button>
                 )}
               </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] pt-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGenerationSettingsOpen((open) => !open)}
+                className="mt-3 flex w-full min-w-0 items-center justify-between gap-3 border-t border-white/[0.08] pt-2 text-left"
+                title={latestRunSettingsSummary ? `最近运行：${latestRunSettingsSummary}` : '展开生成设置'}
+                aria-expanded={generationSettingsOpen}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Settings2 size={14} className="shrink-0 text-brand" />
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-bold text-slate-200">生成设置</span>
+                    <span className="block truncate text-[10px] text-slate-500">
+                      {generationSettingsSummary}
+                    </span>
+                  </span>
+                </span>
+                <ChevronDown className={`shrink-0 text-slate-500 transition-transform ${generationSettingsOpen ? 'rotate-180' : ''}`} size={14} />
+              </button>
+            </div>
+            {generationSettingsOpen && (
+              <div className="mt-2 space-y-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-2">
                   <ChatModelSelect
                     label="文本"
                     value={selectedTextModelId}
@@ -2162,21 +2236,9 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
                     onChange={setSelectedVideoModelId}
                   />
                   {modelConfigs.length === 0 && (
-                    <span className="text-[10px] text-slate-500">可在模型配置中添加可用模型</span>
+                    <span className="px-1 text-[10px] text-slate-500">可在模型配置中添加可用模型</span>
                   )}
                 </div>
-                <button
-                  onClick={() => setSettingsPanelOpen((open) => !open)}
-                  className="flex min-w-0 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-left text-[10px] text-slate-400 hover:bg-white/[0.07] hover:text-slate-200"
-                  title={latestRunSettingsSummary ? `最近运行：${latestRunSettingsSummary}` : '下一次生成配置'}
-                >
-                  <Settings2 size={13} className="shrink-0 text-brand" />
-                  <span className="max-w-[184px] truncate">参数 {generationSettingsSummary}</span>
-                </button>
-              </div>
-            </div>
-            {settingsPanelOpen && (
-              <div className="mt-2">
                 <GenerationSettingsPanel settings={generationSettings} onChange={setGenerationSettings} />
               </div>
             )}
@@ -2437,6 +2499,48 @@ export default function WorkspaceView({ initialPrompt, projectId }: WorkspaceVie
             </div>
 
           </div>
+      {shareDialogOpen && project && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#121213] p-5 text-slate-200 shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-bold tracking-[0.22em] text-brand">分享回放</div>
+                <h2 className="mt-2 text-lg font-bold text-white">确认分享历史对话</h2>
+              </div>
+              <button
+                onClick={() => setShareDialogOpen(false)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white"
+                aria-label="关闭分享确认"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              分享后，拿到链接的人无需登录即可查看这个项目的只读历史回放，包括对话过程、运行事件、画布节点和任务记录。
+            </p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 text-[11px] font-semibold text-slate-500">公开回放链接</div>
+              <div className="break-all text-xs leading-5 text-slate-300">
+                {`${window.location.origin}${window.location.pathname}?replayProjectId=${encodeURIComponent(project.id)}`}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => setShareDialogOpen(false)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleShareReplay}
+                className="h-10 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-[0_0_20px_rgba(16,185,129,0.22)] hover:bg-brand/90"
+              >
+                确认分享并复制
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {(selectedTaskDetail || runDetail) && (
         <div className="fixed inset-y-0 right-0 z-50 w-[380px] border-l border-white/10 bg-[#121213] p-6 text-slate-200 shadow-2xl">
           <div className="mb-5 flex items-center justify-between">
